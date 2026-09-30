@@ -65,7 +65,8 @@ Copy `apps/server/.env.example` to `apps/server/.env`. Everything is optional:
 | Setting | Meaning |
 | --- | --- |
 | `PORT`, `HOST` | Where it listens (default 3000 on all interfaces) |
-| `DATA_DIR` | Folder for the database and the token secret (default `apps/server/data`) |
+| `DATA_DIR` | Folder for the SQLite file and the token secret (default `apps/server/data`) |
+| `DATABASE_URL` | `postgresql://...` to use PostgreSQL / Supabase instead of the SQLite file (see the Supabase section) |
 | `JWT_SECRET` | 32+ characters. If absent, a random one is created in `DATA_DIR/jwt.secret` |
 | `TOKEN_TTL` | How long a sign-in lasts (default `12h`) |
 | `CORS_ORIGINS` | Extra sites allowed to call the API. Not needed for the built-in website or the Android app |
@@ -90,11 +91,52 @@ Copy `apps/server/.env.example` to `apps/server/.env`. Everything is optional:
 Setup, School years, *New school year*, then make it current. Create the new sections, enroll returning learners
 (Learners, tick *Not yet enrolled this year*, or import the list), assign teachers. Last year's data stays and stays printable.
 
-## PostgreSQL (optional, untested)
+## Supabase (PostgreSQL) instead of the local file
 
-The schema uses only portable column types. To try PostgreSQL: set `provider = "postgresql"` in
-`apps/server/prisma/schema.prisma`, install `@prisma/adapter-pg`, use it in `apps/server/src/db.ts`, delete
-`prisma/migrations`, run `prisma migrate dev --name init`. For one school, SQLite is simpler and sufficient.
+By default everything is stored in one SQLite file on the server. The system can store it in **PostgreSQL** instead,
+for example a **Supabase** project. Set one setting and nothing else changes: the same server, the same web and
+Android apps. Tables are created automatically at start.
+
+**When it makes sense:** the server runs in the cloud (Render, Railway, Fly.io, a VPS) with no permanent disk, or you
+want the provider to take care of backups. **When it does not:** a school computer that already keeps a backed-up
+file works fine and keeps the data in the school.
+
+> Supabase is used here **only as the database**. The system does not use Supabase's own login, storage or web API.
+> The Supabase *project URL* and *publishable key* are not needed and not used.
+
+1. In Supabase create a **new project** for the school (do not reuse the project of another app). Pick the region closest
+   to the server, for the Philippines usually *Southeast Asia (Singapore)*. Set a strong database password and keep it.
+2. Press **Connect** at the top of the project and copy the **Session pooler** connection string. It looks like
+   `postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-0-<region>.pooler.supabase.com:5432/postgres`.
+   Use the *Session pooler* (port 5432): it works over IPv4 and supports the database migrations. Do not use the
+   *Transaction pooler* (port 6543).
+3. On the machine that runs the server, copy `apps/server/.env.example` to `apps/server/.env` and set
+   `DATABASE_URL=` to that string with the password filled in (symbols such as `@` `#` `/` written as `%40` `%23` `%2F`).
+   On a cloud host put `DATABASE_URL` and `JWT_SECRET` (32+ random characters) in the host's environment settings instead.
+4. `npm start`. The log says `Database: PostgreSQL postgres.<ref>@...` and the tables are created. Open the address:
+   the first-run screen appears as usual.
+5. In Supabase, **Table Editor** should list the tables with *RLS enabled*, and **Project Settings, Data API** can be
+   switched off, since this system never uses it.
+
+**Learners' data is protected from Supabase's public web API.** Supabase publishes every table of a project through a
+web API opened by the *publishable key*, which is public by design (it sits in every app that uses it). The second
+database migration (`lock_down_data_api`) turns on row-level security for all tables and removes the web-API roles'
+privileges, so that key can read nothing. The server itself connects with the database owner's login, which is not
+affected. An automated test checks this on every table. If you add tables of your own, do the same for them.
+
+**Things to know**
+- **Backups.** The *Download backup* button only exists for SQLite. In Supabase use *Database, Backups*. Daily backups
+  need a paid plan; on the free plan export regularly (`pg_dump` with the connection string) and remember that
+  **free projects pause after a week without use**, which locks everybody out until you resume it.
+- **Speed.** Every screen talks to the database over the internet. Keep the server in the same region as the database
+  (both in Singapore) for the best speed. A school computer in the Philippines talking to Singapore works but is a
+  little slower than a local file.
+- **Privacy.** Grades and learner records are then stored on a foreign cloud service. Ask your Data Protection Officer
+  and the division office whether that is allowed for your school, and how to inform learners and parents.
+- **Switching.** Data is not copied between SQLite and PostgreSQL automatically. Decide before entering real records.
+- **Tested with:** the full automated suite runs on PostgreSQL (PGlite, a real Postgres in WebAssembly, through the same
+  `pg` driver) and `prisma migrate deploy` was run against it. It has **not** been run against a live Supabase project
+  yet, because that needs the database password. Do the first run yourself with an empty project and check steps 4 and 5.
 
 ## Privacy checklist
 

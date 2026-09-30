@@ -9,15 +9,18 @@
     "start": "prisma migrate deploy && tsx --env-file-if-exists=.env src/index.ts",
     "start:demo": "node scripts/start-demo.mjs",
     "test": "vitest run",
-    "typecheck": "prisma generate && tsc --noEmit",
-    "postinstall": "prisma generate",
+    "typecheck": "prisma generate && prisma generate --schema prisma/postgres/schema.prisma && tsc --noEmit",
+    "postinstall": "prisma generate && prisma generate --schema prisma/postgres/schema.prisma",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx --env-file-if-exists=.env src/cli/seed.ts",
     "db:demo": "tsx --env-file-if-exists=.env src/cli/demo.ts",
     "db:reset-password": "tsx --env-file-if-exists=.env src/cli/reset-password.ts",
-    "demo:load": "node scripts/demo-load.mjs"
+    "demo:load": "node scripts/demo-load.mjs",
+    "db:pg-schema": "tsx scripts/make-pg-schema.ts",
+    "db:pg-check": "tsx scripts/make-pg-schema.ts --check",
+    "test:postgres": "node scripts/run-postgres-tests.mjs"
   },
   "dependencies": {
     "@bnhs/core": "*",
@@ -27,18 +30,23 @@
     "@fastify/static": "^10.1.5",
     "@libsql/client": "^0.17.0",
     "@prisma/adapter-libsql": "7.10.0",
+    "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "exceljs": "^4.4.0",
     "fastify": "^5.12.5",
     "jose": "^6.2.12",
     "pdfkit": "^0.20.2",
+    "pg": "^8.23.0",
     "prisma": "7.10.0",
     "tsx": "^4.23.15",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11",
     "@types/node": "^20.19.0",
     "@types/pdfkit": "^0.17.0",
+    "@types/pg": "^8.23.1",
     "vitest": "^4.1.11"
   }
 }

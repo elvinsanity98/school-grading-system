@@ -2,6 +2,7 @@ import { LEARNER_STATUSES, isValidLrn } from '@bnhs/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit';
+import { ci } from '../db';
 import { generateTempPassword, hashPassword, requireRole } from '../auth';
 import { conflict, notFound, parse } from '../errors';
 import { presentLearner } from '../services/present';
@@ -112,7 +113,7 @@ export default async function learnersRoutes(app: FastifyInstance) {
     if (q.status) where.status = q.status;
     if (q.q) {
       const term = q.q.trim();
-      where.OR = [{ lrn: { contains: term } }, { lastName: { contains: term } }, { firstName: { contains: term } }];
+      where.OR = [{ lrn: { contains: term } }, { lastName: ci(term) }, { firstName: ci(term) }];
     }
     if (q.schoolYearId || q.sectionId) {
       where.enrollments = {

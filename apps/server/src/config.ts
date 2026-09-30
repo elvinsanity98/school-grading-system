@@ -15,8 +15,25 @@ mkdirSync(dataDir, { recursive: true });
 
 export const dbFile = process.env.DB_FILE ? resolve(process.env.DB_FILE) : join(dataDir, isTest ? 'test.db' : 'bnhs.db');
 
-/** Prisma URL form of `dbFile` (forward slashes so it also works on Windows). */
-export const databaseUrl = process.env.DATABASE_URL ?? `file:${dbFile.replace(/\\/g, '/')}`;
+/**
+ * Where the data lives. Default: a SQLite file (forward slashes so it also works on Windows).
+ * Set DATABASE_URL to a postgresql:// address (for example Supabase) to use PostgreSQL instead.
+ */
+export const databaseUrl = process.env.DATABASE_URL?.trim() || `file:${dbFile.replace(/\\/g, '/')}`;
+
+export const isPostgresUrl = (url: string): boolean => /^postgres(ql)?:\/\//i.test(url);
+export const isPostgres = isPostgresUrl(databaseUrl);
+
+/** Safe to log: the password is left out. */
+export function describeDatabase(url: string = databaseUrl): string {
+  if (!isPostgresUrl(url)) return url.replace(/^file:/, 'SQLite file ');
+  try {
+    const u = new URL(url);
+    return `PostgreSQL ${u.username ? `${decodeURIComponent(u.username)}@` : ''}${u.host}${u.pathname}`;
+  } catch {
+    return 'PostgreSQL';
+  }
+}
 
 function loadJwtSecret(): string {
   if (process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32) return process.env.JWT_SECRET;

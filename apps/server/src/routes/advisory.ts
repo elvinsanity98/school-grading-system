@@ -2,6 +2,7 @@ import { OBSERVED_VALUES, VALUE_MARKINGS, quartersOfSemester, remarkFor } from '
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit';
+import { bulkUpsert } from '../db';
 import { isOffice, me } from '../auth';
 import { badRequest, forbidden, notFound, parse } from '../errors';
 import { buildCard, buildCards, calendarYear, loadHonorsPolicy, type Visibility } from '../services/card';
@@ -199,15 +200,12 @@ export default async function advisoryRoutes(app: FastifyInstance) {
       if (!ids.has(e.enrollmentId)) throw badRequest('A learner in the list is not in this section.');
       if (e.daysPresent > schoolDays) throw badRequest(`Days present cannot be more than the ${schoolDays} school days.`);
     }
-    await db.$transaction(
-      body.entries.map((e) =>
-        db.attendance.upsert({
-          where: { enrollmentId_year_month: { enrollmentId: e.enrollmentId, year, month: body.month } },
-          update: { daysPresent: e.daysPresent, timesTardy: e.timesTardy },
-          create: { enrollmentId: e.enrollmentId, year, month: body.month, daysPresent: e.daysPresent, timesTardy: e.timesTardy },
-        }),
-      ),
-    );
+    await bulkUpsert(db, {
+      table: 'Attendance',
+      columns: ['enrollmentId', 'year', 'month', 'daysPresent', 'timesTardy'],
+      key: ['enrollmentId', 'year', 'month'],
+      rows: [...new Map(body.entries.map((e) => [e.enrollmentId, e])).values()].map((e) => [e.enrollmentId, year, body.month, e.daysPresent, e.timesTardy]),
+    });
     await audit(db, req, 'ATTENDANCE_SAVED', 'Section', section.id, { month: body.month, entries: body.entries.length });
     return { saved: body.entries.length };
   });
@@ -243,17 +241,24 @@ export default async function advisoryRoutes(app: FastifyInstance) {
       if (!ids.has(e.enrollmentId)) throw badRequest('A learner in the list is not in this section.');
       if (!validKeys.has(e.valueKey)) throw badRequest(`Unknown behavior statement "${e.valueKey}".`);
     }
-    await db.$transaction(
-      body.entries.map((e) =>
-        e.marking
-          ? db.observedValue.upsert({
-              where: { enrollmentId_quarter_valueKey: { enrollmentId: e.enrollmentId, quarter: body.quarter, valueKey: e.valueKey } },
-              update: { marking: e.marking },
-              create: { enrollmentId: e.enrollmentId, quarter: body.quarter, valueKey: e.valueKey, marking: e.marking },
-            })
-          : db.observedValue.deleteMany({ where: { enrollmentId: e.enrollmentId, quarter: body.quarter, valueKey: e.valueKey } }),
-      ),
-    );
+    // Last entry per statement wins; blank markings remove the mark. Few statements, not one per cell.
+    const latest = new Map<string, (typeof body.entries)[number]>();
+    for (const e of body.entries) latest.set(`${e.enrollmentId}:${e.valueKey}`, e);
+    const cleared = [...latest.values()].filter((e) => !e.marking);
+    const marked = [...latest.values()].filter((e) => e.marking);
+    await db.$transaction(async (tx) => {
+      for (let i = 0; i < cleared.length; i += 300) {
+        await tx.observedValue.deleteMany({
+          where: { quarter: body.quarter, OR: cleared.slice(i, i + 300).map((e) => ({ enrollmentId: e.enrollmentId, valueKey: e.valueKey })) },
+        });
+      }
+      await bulkUpsert(tx, {
+        table: 'ObservedValue',
+        columns: ['enrollmentId', 'quarter', 'valueKey', 'marking'],
+        key: ['enrollmentId', 'quarter', 'valueKey'],
+        rows: marked.map((e) => [e.enrollmentId, body.quarter, e.valueKey, e.marking]),
+      });
+    });
     await audit(db, req, 'VALUES_SAVED', 'Section', section.id, { quarter: body.quarter, entries: body.entries.length });
     return { saved: body.entries.length };
   });

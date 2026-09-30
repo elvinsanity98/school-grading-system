@@ -109,9 +109,12 @@ export async function recomputeClassQuarter(db: Db, classId: number, quarter: nu
   const semester = semesterOfQuarter(quarter);
   const now = new Date();
 
-  const ops = enrollments.map((e) => {
+  const rows = enrollments.map((e) => {
     const detail = computeForEnrollment(items, e.id, weights);
-    const data = {
+    return {
+      classId,
+      enrollmentId: e.id,
+      quarter,
       subjectId: cls.subjectId,
       semester,
       detail: JSON.stringify(detail),
@@ -120,13 +123,13 @@ export async function recomputeClassQuarter(db: Db, classId: number, quarter: nu
       missing: detail.missing,
       computedAt: now,
     };
-    return db.quarterlyGrade.upsert({
-      where: { classId_enrollmentId_quarter: { classId, enrollmentId: e.id, quarter } },
-      update: data,
-      create: { classId, enrollmentId: e.id, quarter, ...data },
-    });
   });
-  if (ops.length) await db.$transaction(ops);
+  // Replace the whole quarter in two statements. One upsert per learner would be dozens of round
+  // trips, which is slow on a hosted database.
+  await db.$transaction([
+    db.quarterlyGrade.deleteMany({ where: { classId, quarter } }),
+    db.quarterlyGrade.createMany({ data: rows }),
+  ]);
 }
 
 /** After a learner joins or changes section, bring the stored grades of that section up to date. */

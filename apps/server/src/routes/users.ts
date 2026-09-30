@@ -2,6 +2,7 @@ import { ROLES } from '@bnhs/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit';
+import { ci } from '../db';
 import { generateTempPassword, hashPassword, me, passwordProblem, requireRole } from '../auth';
 import { badRequest, conflict, forbidden, notFound, parse } from '../errors';
 import { publicUser } from '../services/present';
@@ -44,7 +45,7 @@ export default async function usersRoutes(app: FastifyInstance) {
     if (q.active === 'true') where.active = true;
     if (q.active === 'false') where.active = false;
     if (q.q) {
-      where.OR = [{ fullName: { contains: q.q } }, { username: { contains: q.q.toLowerCase() } }];
+      where.OR = [{ fullName: ci(q.q) }, { username: { contains: q.q.toLowerCase() } }];
     }
     const users = await db.user.findMany({ where, orderBy: [{ role: 'asc' }, { fullName: 'asc' }], take: 500 });
     return users.map(publicUser);

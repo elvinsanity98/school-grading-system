@@ -2,6 +2,7 @@ import { COMPONENTS, semesterOfQuarter, type Component } from '@bnhs/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit';
+import { bulkUpsert } from '../db';
 import { isOffice, me, requireRole, type AuthUser } from '../auth';
 import { badRequest, conflict, forbidden, locked, notFound, parse } from '../errors';
 import {
@@ -227,17 +228,20 @@ export default async function recordsRoutes(app: FastifyInstance) {
       }
     }
 
-    const ops = body.entries.map((e) => {
-      const clear = e.score == null && !e.excused;
-      if (clear) return db.score.deleteMany({ where: { itemId: e.itemId, enrollmentId: e.enrollmentId } });
-      const score = e.excused ? null : e.score == null ? null : round2(e.score);
-      return db.score.upsert({
-        where: { itemId_enrollmentId: { itemId: e.itemId, enrollmentId: e.enrollmentId } },
-        update: { score, excused: e.excused },
-        create: { itemId: e.itemId, enrollmentId: e.enrollmentId, score, excused: e.excused },
-      });
+    // Later entries for the same cell win. Then save in a handful of statements, not one per cell:
+    // pasting a column of scores is dozens of cells, and each statement is a round trip to the database.
+    const latest = new Map<string, (typeof body.entries)[number]>();
+    for (const e of body.entries) latest.set(`${e.itemId}:${e.enrollmentId}`, e);
+    const clears: Array<{ itemId: number; enrollmentId: number }> = [];
+    const sets: unknown[][] = [];
+    for (const e of latest.values()) {
+      if (e.score == null && !e.excused) clears.push({ itemId: e.itemId, enrollmentId: e.enrollmentId });
+      else sets.push([e.itemId, e.enrollmentId, e.excused ? null : round2(e.score!), e.excused]);
+    }
+    await db.$transaction(async (tx) => {
+      for (let i = 0; i < clears.length; i += 300) await tx.score.deleteMany({ where: { OR: clears.slice(i, i + 300) } });
+      await bulkUpsert(tx, { table: 'Score', columns: ['itemId', 'enrollmentId', 'score', 'excused'], key: ['itemId', 'enrollmentId'], rows: sets });
     });
-    await db.$transaction(ops);
     await recomputeClassQuarter(db, cls.id, body.quarter);
 
     await audit(db, req, 'SCORES_SAVED', 'ClassAssignment', cls.id, { quarter: body.quarter, entries: body.entries.length });

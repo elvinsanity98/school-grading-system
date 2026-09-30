@@ -1,5 +1,5 @@
 import { buildApp } from './app';
-import { config, dbFile } from './config';
+import { config, describeDatabase } from './config';
 import { createDb, tuneSqlite } from './db';
 
 const db = createDb();
@@ -17,7 +17,7 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 try {
   await app.listen({ port: config.port, host: config.host });
-  app.log.info(`Database: ${dbFile}`);
+  app.log.info(`Database: ${describeDatabase()}`);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

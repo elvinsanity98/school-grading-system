@@ -189,7 +189,10 @@ export interface BaseSeedOptions {
   sampleCurriculum?: boolean;
 }
 
-/** Idempotent: safe to run on an existing database. */
+/**
+ * Idempotent: safe to run on an existing database. Written with a few bulk statements rather than a
+ * loop of upserts, because on a hosted database every statement costs a network round trip.
+ */
 export async function seedBaseData(db: Db, opts: BaseSeedOptions = {}): Promise<void> {
   await db.school.upsert({
     where: { id: 1 },
@@ -197,54 +200,43 @@ export async function seedBaseData(db: Db, opts: BaseSeedOptions = {}): Promise<
     create: { id: 1, name: opts.schoolName || DEFAULT_SCHOOL.schoolName, principalTitle: DEFAULT_SCHOOL.principalTitle },
   });
 
-  for (const w of DEFAULT_WEIGHT_PROFILES) {
-    await db.weightProfile.upsert({
-      where: { code: w.code },
-      update: {},
-      create: { code: w.code, name: w.name, ww: w.ww, pt: w.pt, qa: w.qa },
-    });
-  }
+  const haveProfiles = new Set((await db.weightProfile.findMany({ select: { code: true } })).map((p) => p.code));
+  const newProfiles = DEFAULT_WEIGHT_PROFILES.filter((w) => !haveProfiles.has(w.code)).map((w) => ({ code: w.code, name: w.name, ww: w.ww, pt: w.pt, qa: w.qa }));
+  if (newProfiles.length) await db.weightProfile.createMany({ data: newProfiles });
 
   if (!opts.sampleCurriculum) return;
 
-  const strandByCode = new Map<string, number>();
-  for (const s of STRAND_SEEDS) {
-    const row = await db.strand.upsert({ where: { code: s.code }, update: {}, create: s });
-    strandByCode.set(s.code, row.id);
-  }
+  const haveStrands = new Set((await db.strand.findMany({ select: { code: true } })).map((x) => x.code));
+  const newStrands = STRAND_SEEDS.filter((x) => !haveStrands.has(x.code));
+  if (newStrands.length) await db.strand.createMany({ data: newStrands });
+  const strandByCode = new Map((await db.strand.findMany()).map((x) => [x.code, x.id]));
 
-  let order = 0;
-  for (const s of SUBJECT_SEEDS) {
-    const subject = await db.subject.upsert({
-      where: { code: s.code },
-      update: {},
-      create: { code: s.code, name: s.name, type: s.type, isImmersion: s.isImmersion ?? false },
-    });
-    order += 1;
-    for (const [gradeLevel, semester] of s.when) {
-      // Subjects every strand takes (core and applied) are stored once with strandId = null.
-      const targets: Array<number | null> = s.strands ? s.strands.map((c) => strandByCode.get(c)!) : [null];
+  const haveSubjects = new Set((await db.subject.findMany({ select: { code: true } })).map((x) => x.code));
+  const newSubjects = SUBJECT_SEEDS.filter((x) => !haveSubjects.has(x.code)).map((x) => ({ code: x.code, name: x.name, type: x.type, isImmersion: x.isImmersion ?? false }));
+  if (newSubjects.length) await db.subject.createMany({ data: newSubjects });
+  const subjectByCode = new Map((await db.subject.findMany()).map((x) => [x.code, x.id]));
+
+  const slot = (strandId: number | null, gradeLevel: number, semester: number, subjectId: number) => `${strandId ?? 'all'}|${gradeLevel}|${semester}|${subjectId}`;
+  const haveSlots = new Set((await db.curriculumSubject.findMany()).map((c) => slot(c.strandId, c.gradeLevel, c.semester, c.subjectId)));
+  const rows: Array<{ strandId: number | null; gradeLevel: number; semester: number; subjectId: number; sortOrder: number }> = [];
+  SUBJECT_SEEDS.forEach((seed, index) => {
+    const subjectId = subjectByCode.get(seed.code)!;
+    // Subjects every strand takes (core and applied) are stored once with strandId = null.
+    const targets: Array<number | null> = seed.strands ? seed.strands.map((c) => strandByCode.get(c)!) : [null];
+    for (const [gradeLevel, semester] of seed.when) {
       for (const strandId of targets) {
-        const exists = await db.curriculumSubject.findFirst({
-          where: { strandId, gradeLevel, semester, subjectId: subject.id },
-        });
-        if (!exists) {
-          await db.curriculumSubject.create({
-            data: { strandId, gradeLevel, semester, subjectId: subject.id, sortOrder: order },
-          });
-        }
+        if (haveSlots.has(slot(strandId, gradeLevel, semester, subjectId))) continue;
+        haveSlots.add(slot(strandId, gradeLevel, semester, subjectId));
+        rows.push({ strandId, gradeLevel, semester, subjectId, sortOrder: index + 1 });
       }
     }
-  }
+  });
+  if (rows.length) await db.curriculumSubject.createMany({ data: rows });
 }
 
-/** Creates the four grading periods of a school year (all closed). */
+/** Creates the four grading periods of a school year (all closed) unless they already exist. */
 export async function createPeriods(db: Db, schoolYearId: number): Promise<void> {
-  for (const quarter of [1, 2, 3, 4]) {
-    await db.gradingPeriod.upsert({
-      where: { schoolYearId_quarter: { schoolYearId, quarter } },
-      update: {},
-      create: { schoolYearId, quarter, status: 'CLOSED', released: false },
-    });
-  }
+  const have = new Set((await db.gradingPeriod.findMany({ where: { schoolYearId }, select: { quarter: true } })).map((p) => p.quarter));
+  const missing = [1, 2, 3, 4].filter((q) => !have.has(q)).map((quarter) => ({ schoolYearId, quarter, status: 'CLOSED', released: false }));
+  if (missing.length) await db.gradingPeriod.createMany({ data: missing });
 }

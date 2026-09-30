@@ -10,7 +10,7 @@ DepEd Order No. 8, s. 2015 for computing grades and runs as a **website** and as
 - Learners and parents see their own approved grades.
 
 > **Status.** All server logic, the web app and the Android project are written and the parts that can run on a
-> computer are tested (63 automated tests, a real browser walk-through, generated PDFs inspected). The Android
+> computer are tested (65 automated tests, plus 5 more when run on PostgreSQL, a real browser walk-through, generated PDFs inspected). The Android
 > app has **not** been built into an APK or run on a phone yet, because this machine has no Android SDK.
 > See [docs/ANDROID.md](docs/ANDROID.md). Read [Known limits](#known-limits) before using it for real records.
 
@@ -71,14 +71,14 @@ editable by the administrator. Worked example and all rules: [docs/DEPED-RULES.m
 | Remedial | Remedial marks and recomputed final grades |
 | Early warning | Learners with a quarterly grade below 75 on the adviser's and teacher's dashboard |
 | People | Administrator, registrar, teacher, learner and parent roles; one-time passwords; account lock after repeated wrong passwords |
-| Safety | Audit log of every important action, one-click database backup, all traffic can run over HTTPS |
+| Safety | Audit log of every important action, one-click database backup (SQLite), all traffic can run over HTTPS, tables locked away from Supabase's public web API |
 
 ## Technology
 
 | Part | Tools |
 | --- | --- |
 | Language | TypeScript 7 everywhere, npm workspaces |
-| API | Node.js, Fastify 5, Prisma 7 with SQLite (libSQL driver), zod 4, jose (tokens), scrypt (passwords), pdfkit, exceljs |
+| API | Node.js, Fastify 5, Prisma 7 with SQLite (libSQL driver) or PostgreSQL / Supabase, zod 4, jose (tokens), scrypt (passwords), pdfkit, exceljs |
 | Web | React 19, Vite 8, Tailwind CSS 4, TanStack Query 5, React Router 7, Lucide icons, installable PWA |
 | Android | Capacitor 7 wrapping the same web app |
 | Tests | Vitest 4 |
@@ -86,7 +86,7 @@ editable by the administrator. Worked example and all rules: [docs/DEPED-RULES.m
 
 ```
 packages/core     DepEd grading rules (pure TypeScript, 28 tests)
-apps/server       API, database schema and migrations, PDF and Excel reports (23 tests)
+apps/server       API, database schema and migrations (SQLite + PostgreSQL), PDF and Excel reports (25 tests, 30 on PostgreSQL)
 apps/web          React app + Capacitor Android project in apps/web/android (12 tests)
 docs/             user guide, deployment, Android, DepEd rules
 ```
@@ -100,6 +100,7 @@ npm test               # all tests
 npm run typecheck
 npm run build          # web app into apps/web/dist, served by the API
 npm run db:demo        # fake data into the current database (empty database only)
+npm run test:postgres -w @bnhs/server   # the server tests again, on PostgreSQL
 ```
 
 Useful: `npm run db:reset-password -w @bnhs/server -- <username>` prints a new one-time password for a
@@ -120,5 +121,5 @@ locked-out administrator. Copy `apps/server/.env.example` to `.env` to change po
 - **Weights and the transmutation table come from DO 8, s. 2015** as retained by later orders. If DepEd or your division issues new rules (for example a revised Senior High School curriculum), the administrator can edit weights and the curriculum, but the transmutation table and rounding rules are in code (`packages/core`).
 - **The sample curriculum is a sample.** Subjects and their semesters differ between schools. Compare it with the program BNHS actually offers (Setup, Curriculum) before creating sections.
 - **Node.js 20 on Windows:** the database driver can crash at *shutdown* (after all work is saved) on Node 20. Use Node 22 LTS or newer on the server to avoid it.
-- SQLite fits one school comfortably. The schema uses portable types so PostgreSQL is possible, but that path is not tested.
+- SQLite is the default and fits one school comfortably. **PostgreSQL / Supabase** is supported by setting `DATABASE_URL` (docs/DEPLOYMENT.md). It passes the whole test suite on a local PostgreSQL stand-in but **has not been run against a live Supabase project**, which needs the database password.
 - Docker and CI files are provided but were not run on the development machine.

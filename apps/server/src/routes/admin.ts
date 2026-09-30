@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { audit } from '../audit';
 import { requireRole } from '../auth';
-import { dataDir, dbFile } from '../config';
+import { dataDir, dbFile, describeDatabase } from '../config';
+import { dbKind } from '../db';
 import { recomputeClassQuarter } from '../services/grades';
 
 export default async function adminRoutes(app: FastifyInstance) {
@@ -34,6 +35,12 @@ export default async function adminRoutes(app: FastifyInstance) {
 
   /** A consistent snapshot of the whole database as a downloadable file. */
   app.get('/admin/backup', { preHandler: admin }, async (req, reply) => {
+    if (dbKind() === 'postgres') {
+      return reply.code(501).send({
+        error: "This system stores its data in PostgreSQL (Supabase). Use the database provider's own backups: Supabase, Database, Backups. See docs/DEPLOYMENT.md.",
+        code: 'NOT_AVAILABLE',
+      });
+    }
     const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
     const target = join(dataDir, `backup-${stamp}.db`);
     if (existsSync(target)) await rm(target);
@@ -77,11 +84,20 @@ export default async function adminRoutes(app: FastifyInstance) {
       db.score.count(),
       db.auditLog.count(),
     ]);
+    let dbBytes = 0;
+    if (dbKind() === 'postgres') {
+      const rows = await db.$queryRaw<Array<{ size: bigint | number }>>`SELECT pg_database_size(current_database()) AS size`;
+      dbBytes = Number(rows[0]?.size ?? 0);
+    } else if (existsSync(dbFile)) {
+      dbBytes = statSync(dbFile).size;
+    }
     return {
       version: '1.0.0',
       node: process.version,
-      dbFile,
-      dbBytes: existsSync(dbFile) ? statSync(dbFile).size : 0,
+      database: dbKind(),
+      dbLabel: describeDatabase(),
+      dbBytes,
+      canDownloadBackup: dbKind() === 'sqlite',
       counts: { learners, users, scores, audits },
     };
   });

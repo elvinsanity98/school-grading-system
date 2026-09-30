@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit';
+import { bulkUpsert } from '../db';
 import { isOffice, me, requireRole } from '../auth';
 import { conflict, forbidden, notFound, parse } from '../errors';
 import { createPeriods } from '../seed-data';
@@ -136,15 +137,12 @@ export default async function schoolRoutes(app: FastifyInstance) {
   app.put('/school-years/:id/school-days', { preHandler: office }, async (req) => {
     const id = idParam(req);
     const rows = parse(daysBody, req.body);
-    await db.$transaction(
-      rows.map((r) =>
-        db.schoolDays.upsert({
-          where: { schoolYearId_year_month: { schoolYearId: id, year: r.year, month: r.month } },
-          update: { days: r.days },
-          create: { schoolYearId: id, ...r },
-        }),
-      ),
-    );
+    await bulkUpsert(db, {
+      table: 'SchoolDays',
+      columns: ['schoolYearId', 'year', 'month', 'days'],
+      key: ['schoolYearId', 'year', 'month'],
+      rows: [...new Map(rows.map((r) => [`${r.year}-${r.month}`, r])).values()].map((r) => [id, r.year, r.month, r.days]),
+    });
     await audit(db, req, 'SCHOOL_DAYS_SET', 'SchoolYear', id, { months: rows.length });
     return { ok: true };
   });

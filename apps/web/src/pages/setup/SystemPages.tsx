@@ -54,7 +54,9 @@ export function AuditPage() {
 interface SystemInfo {
   version: string;
   node: string;
-  dbFile: string;
+  database: 'sqlite' | 'postgres';
+  dbLabel: string;
+  canDownloadBackup: boolean;
   dbBytes: number;
   counts: { learners: number; users: number; scores: number; audits: number };
 }
@@ -73,18 +75,31 @@ export function SystemPage() {
       <PageHeader title="System and backup" />
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardTitle sub="Everything is stored in one file on the school server">Backup</CardTitle>
-          <div className="flex flex-col items-start gap-3 text-sm">
-            <p>Download a copy of the whole database (learners, grades, users). Keep it somewhere safe, for example a flash drive kept by the school head. Do this at least after each quarter is approved.</p>
-            <Button variant="primary" icon={<DatabaseBackup className="size-4" />} onClick={() => downloadReport('/admin/backup', 'bnhs-backup.db').catch((e) => toast.error(errorMessage(e)))}>Download backup</Button>
-            <p className="text-xs text-muted">To restore: stop the server, replace <code>apps/server/data/bnhs.db</code> with the backup file, start the server again. See docs/DEPLOYMENT.md.</p>
-          </div>
+          {q.data && !q.data.canDownloadBackup ? (
+            <>
+              <CardTitle sub="Data is stored in PostgreSQL (Supabase)">Backup</CardTitle>
+              <div className="flex flex-col items-start gap-3 text-sm">
+                <p>The database provider keeps the backups. In Supabase open <b>Database, Backups</b>: daily backups are automatic on paid plans, and you can also export with <code>pg_dump</code>. Free projects have no daily backup and pause after a week without use, so plan for a paid plan or regular exports.</p>
+                <p className="text-xs text-muted">Details in docs/DEPLOYMENT.md, section Supabase.</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <CardTitle sub="Everything is stored in one file on the school server">Backup</CardTitle>
+              <div className="flex flex-col items-start gap-3 text-sm">
+                <p>Download a copy of the whole database (learners, grades, users). Keep it somewhere safe, for example a flash drive kept by the school head. Do this at least after each quarter is approved.</p>
+                <Button variant="primary" icon={<DatabaseBackup className="size-4" />} onClick={() => downloadReport('/admin/backup', 'bnhs-backup.db').catch((e) => toast.error(errorMessage(e)))}>Download backup</Button>
+                <p className="text-xs text-muted">To restore: stop the server, replace <code>apps/server/data/bnhs.db</code> with the backup file, start the server again. See docs/DEPLOYMENT.md.</p>
+              </div>
+            </>
+          )}
         </Card>
         <Card>
           <CardTitle>About this system</CardTitle>
           {q.isPending ? <Spinner /> : q.isError ? <Alert tone="bad">{errorMessage(q.error)}</Alert> : (
             <dl className="grid grid-cols-[9rem_1fr] gap-y-2 text-sm">
               <dt className="text-muted">Version</dt><dd>{q.data.version}</dd>
+              <dt className="text-muted">Database</dt><dd>{q.data.dbLabel}</dd>
               <dt className="text-muted">Database size</dt><dd>{(q.data.dbBytes / 1024 / 1024).toFixed(2)} MB</dd>
               <dt className="text-muted">Learners</dt><dd className="tnum">{q.data.counts.learners}</dd>
               <dt className="text-muted">Accounts</dt><dd className="tnum">{q.data.counts.users}</dd>

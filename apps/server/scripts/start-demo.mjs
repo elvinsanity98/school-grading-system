@@ -12,7 +12,7 @@ if (!existsSync(dbFile)) {
 }
 const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
   cwd: root,
-  env: { ...process.env, DB_FILE: dbFile },
+  env: { ...process.env, DB_FILE: dbFile, DATABASE_URL: '' },
   stdio: 'inherit',
 });
 child.on('exit', (code) => process.exit(code ?? 0));

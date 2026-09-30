@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { client, login, makeTestEnv, type Client, type TestEnv } from './helpers';
+import { client, login, makeTestEnv, usingPostgres, type Client, type TestEnv } from './helpers';
 
 /**
  * End-to-end run of a school year through the HTTP API:
@@ -395,10 +395,17 @@ describe('grading workflow', () => {
     expect((await teacher2.get(`/api/at-risk?sectionId=${ids.sectionId}&quarter=1`)).json.learners).toEqual([]);
   });
 
-  it('admin backup produces a SQLite file', async () => {
+  it('admin backup: a SQLite file, or a pointer to Supabase backups on PostgreSQL', async () => {
     const res = await admin.get('/api/admin/backup');
-    expect(res.status).toBe(200);
-    expect(res.raw.subarray(0, 15).toString()).toBe('SQLite format 3');
+    if (usingPostgres) {
+      expect(res.status).toBe(501);
+      expect(res.json.error).toMatch(/Supabase/);
+      expect((await admin.get('/api/admin/system')).json).toMatchObject({ database: 'postgres', canDownloadBackup: false });
+    } else {
+      expect(res.status).toBe(200);
+      expect(res.raw.subarray(0, 15).toString()).toBe('SQLite format 3');
+      expect((await admin.get('/api/admin/system')).json).toMatchObject({ database: 'sqlite', canDownloadBackup: true });
+    }
     expect((await registrar.get('/api/admin/backup')).status).toBe(403);
   });
 });
