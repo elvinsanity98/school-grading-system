@@ -1,0 +1,31 @@
+{
+  "name": "bnhs-grading-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Senior High School grading system for Balakan National High School (DepEd K to 12). Web + Android.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @bnhs/server\" \"npm run dev -w @bnhs/web\"",
+    "build": "npm run build -w @bnhs/web",
+    "start": "npm run start -w @bnhs/server",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:migrate": "npm run db:migrate -w @bnhs/server",
+    "db:seed": "npm run db:seed -w @bnhs/server",
+    "db:demo": "npm run db:demo -w @bnhs/server",
+    "android:sync": "npm run android:sync -w @bnhs/web",
+    "android:open": "npm run android:open -w @bnhs/web",
+    "demo": "npm run build && npm run demo:load -w @bnhs/server && npm run start:demo -w @bnhs/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^7.0.2"
+  }
+}

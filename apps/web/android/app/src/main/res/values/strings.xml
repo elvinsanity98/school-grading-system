@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BNHS SHS Grades</string>
+    <string name="title_activity_main">BNHS SHS Grades</string>
+    <string name="package_name">ph.edu.bnhs.shsgrades</string>
+    <string name="custom_url_scheme">ph.edu.bnhs.shsgrades</string>
+</resources>

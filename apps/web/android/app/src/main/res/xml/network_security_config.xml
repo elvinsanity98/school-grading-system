@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The school server is usually reached over plain http on the school network (for example
+  http://192.168.1.10:3000), so cleartext traffic is allowed. Use an https address whenever the
+  server is reachable from the internet.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

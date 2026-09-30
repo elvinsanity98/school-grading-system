@@ -1,0 +1,14 @@
+{
+  "appId": "ph.edu.bnhs.shsgrades",
+  "appName": "BNHS SHS Grades",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#f4f6fb",
+    "adjustMarginsForEdgeToEdge": "force"
+  }
+}

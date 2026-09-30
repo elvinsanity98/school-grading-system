@@ -1,0 +1,250 @@
+import { DEFAULT_SCHOOL, DEFAULT_WEIGHT_PROFILES } from '@bnhs/core';
+import type { Db } from './db';
+
+interface StrandSeed {
+  code: string;
+  name: string;
+  track: 'ACADEMIC' | 'TVL' | 'SPORTS' | 'ARTS_DESIGN';
+}
+
+export const STRAND_SEEDS: StrandSeed[] = [
+  { code: 'STEM', name: 'Science, Technology, Engineering and Mathematics', track: 'ACADEMIC' },
+  { code: 'ABM', name: 'Accountancy, Business and Management', track: 'ACADEMIC' },
+  { code: 'HUMSS', name: 'Humanities and Social Sciences', track: 'ACADEMIC' },
+  { code: 'GAS', name: 'General Academic Strand', track: 'ACADEMIC' },
+  { code: 'TVL-ICT', name: 'TVL - Information and Communications Technology', track: 'TVL' },
+  { code: 'TVL-HE', name: 'TVL - Home Economics', track: 'TVL' },
+];
+
+type SubjectType = 'CORE' | 'APPLIED' | 'SPECIALIZED';
+
+interface SubjectSeed {
+  code: string;
+  name: string;
+  type: SubjectType;
+  isImmersion?: boolean;
+  /** Where it is offered: [gradeLevel, semester] pairs. */
+  when: Array<[11 | 12, 1 | 2]>;
+  /** Strand codes. Omit for every strand. */
+  strands?: string[];
+}
+
+/**
+ * SAMPLE program of subjects, following the K to 12 Senior High School curriculum guide.
+ * Schools schedule subjects differently, so the administrator edits this list (Setup > Curriculum)
+ * to match the program that Balakan National High School actually offers.
+ */
+export const SUBJECT_SEEDS: SubjectSeed[] = [
+  // ---- core (every strand)
+  { code: 'ORALCOM', name: 'Oral Communication', type: 'CORE', when: [[11, 1]] },
+  { code: 'KOMPAN', name: 'Komunikasyon at Pananaliksik sa Wika at Kulturang Filipino', type: 'CORE', when: [[11, 1]] },
+  { code: 'GENMATH', name: 'General Mathematics', type: 'CORE', when: [[11, 1]] },
+  { code: 'EARTHLIFE', name: 'Earth and Life Science', type: 'CORE', when: [[11, 1]] },
+  { code: 'UCSP', name: 'Understanding Culture, Society and Politics', type: 'CORE', when: [[11, 1]] },
+  { code: 'PEH1', name: 'Physical Education and Health 1', type: 'CORE', when: [[11, 1]] },
+  { code: 'READWRITE', name: 'Reading and Writing Skills', type: 'CORE', when: [[11, 2]] },
+  {
+    code: 'PAGBASA',
+    name: "Pagbasa at Pagsusuri ng Iba't Ibang Teksto Tungo sa Pananaliksik",
+    type: 'CORE',
+    when: [[11, 2]],
+  },
+  { code: 'STATPROB', name: 'Statistics and Probability', type: 'CORE', when: [[11, 2]] },
+  { code: 'PHYSCI', name: 'Physical Science', type: 'CORE', when: [[11, 2]] },
+  { code: 'PERDEV', name: 'Personal Development', type: 'CORE', when: [[11, 2]] },
+  { code: 'PEH2', name: 'Physical Education and Health 2', type: 'CORE', when: [[11, 2]] },
+  { code: 'LIT21', name: '21st Century Literature from the Philippines and the World', type: 'CORE', when: [[12, 1]] },
+  { code: 'CPAR', name: 'Contemporary Philippine Arts from the Regions', type: 'CORE', when: [[12, 1]] },
+  { code: 'MIL', name: 'Media and Information Literacy', type: 'CORE', when: [[12, 1]] },
+  { code: 'PEH3', name: 'Physical Education and Health 3', type: 'CORE', when: [[12, 1]] },
+  { code: 'PHILO', name: 'Introduction to the Philosophy of the Human Person', type: 'CORE', when: [[12, 2]] },
+  { code: 'PEH4', name: 'Physical Education and Health 4', type: 'CORE', when: [[12, 2]] },
+
+  // ---- applied (every strand)
+  { code: 'EAPP', name: 'English for Academic and Professional Purposes', type: 'APPLIED', when: [[11, 1]] },
+  { code: 'EMPTECH', name: 'Empowerment Technologies', type: 'APPLIED', when: [[11, 2]] },
+  { code: 'RESEARCH1', name: 'Practical Research 1', type: 'APPLIED', when: [[11, 2]] },
+  { code: 'RESEARCH2', name: 'Practical Research 2', type: 'APPLIED', when: [[12, 1]] },
+  { code: 'ENTREP', name: 'Entrepreneurship', type: 'APPLIED', when: [[12, 1]] },
+  { code: 'FILPILING', name: 'Filipino sa Piling Larang', type: 'APPLIED', when: [[12, 2]] },
+  {
+    code: 'WORKIMM',
+    name: 'Work Immersion',
+    type: 'APPLIED',
+    isImmersion: true,
+    when: [[12, 2]],
+  },
+
+  // ---- STEM
+  { code: 'PRECAL', name: 'Pre-Calculus', type: 'SPECIALIZED', when: [[11, 1]], strands: ['STEM'] },
+  { code: 'GENBIO1', name: 'General Biology 1', type: 'SPECIALIZED', when: [[11, 1]], strands: ['STEM'] },
+  { code: 'BASCAL', name: 'Basic Calculus', type: 'SPECIALIZED', when: [[11, 2]], strands: ['STEM'] },
+  { code: 'GENBIO2', name: 'General Biology 2', type: 'SPECIALIZED', when: [[11, 2]], strands: ['STEM'] },
+  { code: 'GENPHYS1', name: 'General Physics 1', type: 'SPECIALIZED', when: [[12, 1]], strands: ['STEM'] },
+  { code: 'GENCHEM1', name: 'General Chemistry 1', type: 'SPECIALIZED', when: [[12, 1]], strands: ['STEM'] },
+  { code: 'GENPHYS2', name: 'General Physics 2', type: 'SPECIALIZED', when: [[12, 2]], strands: ['STEM'] },
+  { code: 'GENCHEM2', name: 'General Chemistry 2', type: 'SPECIALIZED', when: [[12, 2]], strands: ['STEM'] },
+
+  // ---- ABM
+  { code: 'BUSMATH', name: 'Business Math', type: 'SPECIALIZED', when: [[11, 1]], strands: ['ABM'] },
+  {
+    code: 'FABM1',
+    name: 'Fundamentals of Accountancy, Business and Management 1',
+    type: 'SPECIALIZED',
+    when: [[11, 1]],
+    strands: ['ABM'],
+  },
+  { code: 'ORGMAN', name: 'Organization and Management', type: 'SPECIALIZED', when: [[11, 2]], strands: ['ABM'] },
+  {
+    code: 'FABM2',
+    name: 'Fundamentals of Accountancy, Business and Management 2',
+    type: 'SPECIALIZED',
+    when: [[11, 2]],
+    strands: ['ABM'],
+  },
+  { code: 'BUSFIN', name: 'Business Finance', type: 'SPECIALIZED', when: [[12, 1]], strands: ['ABM'] },
+  { code: 'APPECON', name: 'Applied Economics', type: 'SPECIALIZED', when: [[12, 1]], strands: ['ABM', 'GAS'] },
+  {
+    code: 'BUSETHICS',
+    name: 'Business Ethics and Social Responsibility',
+    type: 'SPECIALIZED',
+    when: [[12, 2]],
+    strands: ['ABM'],
+  },
+  {
+    code: 'BES',
+    name: 'Business Enterprise Simulation',
+    type: 'SPECIALIZED',
+    isImmersion: true,
+    when: [[12, 2]],
+    strands: ['ABM'],
+  },
+
+  // ---- HUMSS
+  {
+    code: 'WORLDREL',
+    name: 'Introduction to World Religions and Belief Systems',
+    type: 'SPECIALIZED',
+    when: [[11, 1]],
+    strands: ['HUMSS'],
+  },
+  { code: 'CREATIVEWRIT', name: 'Creative Writing', type: 'SPECIALIZED', when: [[11, 1]], strands: ['HUMSS'] },
+  {
+    code: 'DISS',
+    name: 'Disciplines and Ideas in the Social Sciences',
+    type: 'SPECIALIZED',
+    when: [[11, 2]],
+    strands: ['HUMSS'],
+  },
+  { code: 'POLGOV', name: 'Philippine Politics and Governance', type: 'SPECIALIZED', when: [[11, 2]], strands: ['HUMSS'] },
+  {
+    code: 'DIASS',
+    name: 'Disciplines and Ideas in the Applied Social Sciences',
+    type: 'SPECIALIZED',
+    when: [[12, 1]],
+    strands: ['HUMSS'],
+  },
+  { code: 'CREATIVENF', name: 'Creative Nonfiction', type: 'SPECIALIZED', when: [[12, 1]], strands: ['HUMSS'] },
+  {
+    code: 'CESC',
+    name: 'Community Engagement, Solidarity and Citizenship',
+    type: 'SPECIALIZED',
+    when: [[12, 2]],
+    strands: ['HUMSS'],
+  },
+  {
+    code: 'TRENDS',
+    name: 'Trends, Networks, and Critical Thinking in the 21st Century Culture',
+    type: 'SPECIALIZED',
+    when: [[12, 2]],
+    strands: ['HUMSS'],
+  },
+
+  // ---- GAS
+  { code: 'HUMANITIES1', name: 'Humanities 1', type: 'SPECIALIZED', when: [[11, 1]], strands: ['GAS'] },
+  { code: 'SOCSCI1', name: 'Social Sciences 1', type: 'SPECIALIZED', when: [[11, 2]], strands: ['GAS'] },
+  { code: 'HUMANITIES2', name: 'Humanities 2', type: 'SPECIALIZED', when: [[12, 1]], strands: ['GAS'] },
+  {
+    code: 'DRRR',
+    name: 'Disaster Readiness and Risk Reduction',
+    type: 'SPECIALIZED',
+    when: [[12, 2]],
+    strands: ['GAS'],
+  },
+
+  // ---- TVL sample (rename to the specializations BNHS offers)
+  { code: 'ICT1', name: 'Computer Systems Servicing 1', type: 'SPECIALIZED', when: [[11, 1]], strands: ['TVL-ICT'] },
+  { code: 'ICT2', name: 'Computer Systems Servicing 2', type: 'SPECIALIZED', when: [[11, 2]], strands: ['TVL-ICT'] },
+  { code: 'ICT3', name: 'Computer Systems Servicing 3', type: 'SPECIALIZED', when: [[12, 1]], strands: ['TVL-ICT'] },
+  { code: 'ICT4', name: 'Computer Systems Servicing 4', type: 'SPECIALIZED', when: [[12, 2]], strands: ['TVL-ICT'] },
+  { code: 'HE1', name: 'Cookery 1', type: 'SPECIALIZED', when: [[11, 1]], strands: ['TVL-HE'] },
+  { code: 'HE2', name: 'Cookery 2', type: 'SPECIALIZED', when: [[11, 2]], strands: ['TVL-HE'] },
+  { code: 'HE3', name: 'Cookery 3', type: 'SPECIALIZED', when: [[12, 1]], strands: ['TVL-HE'] },
+  { code: 'HE4', name: 'Cookery 4', type: 'SPECIALIZED', when: [[12, 2]], strands: ['TVL-HE'] },
+];
+
+export interface BaseSeedOptions {
+  schoolName?: string;
+  /** Load the sample strands, subjects and curriculum. */
+  sampleCurriculum?: boolean;
+}
+
+/** Idempotent: safe to run on an existing database. */
+export async function seedBaseData(db: Db, opts: BaseSeedOptions = {}): Promise<void> {
+  await db.school.upsert({
+    where: { id: 1 },
+    update: opts.schoolName ? { name: opts.schoolName } : {},
+    create: { id: 1, name: opts.schoolName || DEFAULT_SCHOOL.schoolName, principalTitle: DEFAULT_SCHOOL.principalTitle },
+  });
+
+  for (const w of DEFAULT_WEIGHT_PROFILES) {
+    await db.weightProfile.upsert({
+      where: { code: w.code },
+      update: {},
+      create: { code: w.code, name: w.name, ww: w.ww, pt: w.pt, qa: w.qa },
+    });
+  }
+
+  if (!opts.sampleCurriculum) return;
+
+  const strandByCode = new Map<string, number>();
+  for (const s of STRAND_SEEDS) {
+    const row = await db.strand.upsert({ where: { code: s.code }, update: {}, create: s });
+    strandByCode.set(s.code, row.id);
+  }
+
+  let order = 0;
+  for (const s of SUBJECT_SEEDS) {
+    const subject = await db.subject.upsert({
+      where: { code: s.code },
+      update: {},
+      create: { code: s.code, name: s.name, type: s.type, isImmersion: s.isImmersion ?? false },
+    });
+    order += 1;
+    for (const [gradeLevel, semester] of s.when) {
+      // Subjects every strand takes (core and applied) are stored once with strandId = null.
+      const targets: Array<number | null> = s.strands ? s.strands.map((c) => strandByCode.get(c)!) : [null];
+      for (const strandId of targets) {
+        const exists = await db.curriculumSubject.findFirst({
+          where: { strandId, gradeLevel, semester, subjectId: subject.id },
+        });
+        if (!exists) {
+          await db.curriculumSubject.create({
+            data: { strandId, gradeLevel, semester, subjectId: subject.id, sortOrder: order },
+          });
+        }
+      }
+    }
+  }
+}
+
+/** Creates the four grading periods of a school year (all closed). */
+export async function createPeriods(db: Db, schoolYearId: number): Promise<void> {
+  for (const quarter of [1, 2, 3, 4]) {
+    await db.gradingPeriod.upsert({
+      where: { schoolYearId_quarter: { schoolYearId, quarter } },
+      update: {},
+      create: { schoolYearId, quarter, status: 'CLOSED', released: false },
+    });
+  }
+}

@@ -1,0 +1,15 @@
+services:
+  grades:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # JWT_SECRET is created automatically inside /data if you do not set it
+      TZ: Asia/Manila
+    volumes:
+      # database + sign-in secret; back this volume up
+      - bnhs-data:/data
+
+volumes:
+  bnhs-data:

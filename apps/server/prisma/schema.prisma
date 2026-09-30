@@ -1,0 +1,424 @@
+// BNHS Senior High School grading system.
+// Only portable column types are used (String / Int / Float / Boolean / DateTime) so the same
+// schema works on PostgreSQL by changing the datasource provider and the adapter.
+// "Enum" columns are plain strings, validated in the API with zod (see @bnhs/core constants).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------- accounts
+
+model User {
+  id                 Int       @id @default(autoincrement())
+  username           String    @unique
+  passwordHash       String
+  /// ADMIN | REGISTRAR | TEACHER | STUDENT | PARENT
+  role               String
+  fullName           String
+  email              String?
+  employeeNo         String?
+  active             Boolean   @default(true)
+  mustChangePassword Boolean   @default(true)
+  /// Bumped on password change / deactivation so old tokens stop working.
+  tokenVersion       Int       @default(0)
+  lastLoginAt        DateTime?
+  /// For STUDENT and PARENT accounts: the learner they may see.
+  learnerId          Int?
+  learner            Learner?  @relation(fields: [learnerId], references: [id], onDelete: SetNull)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  advisorySections Section[]
+  classes          ClassAssignment[]
+
+  @@index([role])
+  @@index([learnerId])
+}
+
+model AuditLog {
+  id       Int      @id @default(autoincrement())
+  at       DateTime @default(now())
+  userId   Int?
+  username String?
+  action   String
+  entity   String?
+  entityId String?
+  detail   String?
+  ip       String?
+
+  @@index([at])
+  @@index([entity, entityId])
+}
+
+// ---------------------------------------------------------------- school setup
+
+/// Single row (id = 1).
+model School {
+  id               Int     @id @default(1)
+  name             String
+  schoolId         String  @default("")
+  region           String  @default("")
+  division         String  @default("")
+  district         String  @default("")
+  address          String  @default("")
+  principalName    String  @default("")
+  principalTitle   String  @default("School Head")
+  registrarName    String  @default("")
+  /// PNG or JPEG as a data URL. Printed on report cards.
+  logo             String?
+  passingGrade     Int     @default(75)
+  honorsWith       Int     @default(90)
+  honorsHigh       Int     @default(95)
+  honorsHighest    Int     @default(98)
+  honorsMinSubject Int     @default(85)
+}
+
+model SchoolYear {
+  id        Int      @id @default(autoincrement())
+  /// e.g. 2026-2027
+  name      String   @unique
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+
+  periods     GradingPeriod[]
+  sections    Section[]
+  enrollments Enrollment[]
+  classes     ClassAssignment[]
+  schoolDays  SchoolDays[]
+}
+
+model GradingPeriod {
+  id           Int        @id @default(autoincrement())
+  schoolYearId Int
+  schoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
+  /// 1..4 (Q1 and Q2 = first semester, Q3 and Q4 = second semester)
+  quarter      Int
+  /// OPEN | CLOSED. Teachers can encode scores only while OPEN.
+  status       String     @default("CLOSED")
+  /// Approved grades of this quarter are visible to learners and parents.
+  released     Boolean    @default(false)
+
+  @@unique([schoolYearId, quarter])
+}
+
+/// Number of school days in a calendar month, for the SF9 attendance table.
+model SchoolDays {
+  id           Int        @id @default(autoincrement())
+  schoolYearId Int
+  schoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
+  year         Int
+  month        Int
+  days         Int
+
+  @@unique([schoolYearId, year, month])
+}
+
+model Strand {
+  id     Int     @id @default(autoincrement())
+  code   String  @unique
+  name   String
+  /// ACADEMIC | TVL | SPORTS | ARTS_DESIGN
+  track  String
+  active Boolean @default(true)
+
+  sections   Section[]
+  curriculum CurriculumSubject[]
+}
+
+model WeightProfile {
+  id   Int    @id @default(autoincrement())
+  code String @unique
+  name String
+  /// Percent. ww + pt + qa = 100.
+  ww   Float
+  pt   Float
+  qa   Float
+
+  subjects Subject[]
+}
+
+model Subject {
+  id              Int            @id @default(autoincrement())
+  code            String         @unique
+  name            String
+  /// CORE | APPLIED | SPECIALIZED
+  type            String
+  /// Work Immersion / Research / Business Enterprise Simulation / Exhibit / Performance
+  isImmersion     Boolean        @default(false)
+  /// Optional override. Normally the weights follow from type, isImmersion and the strand's track.
+  weightProfileId Int?
+  weightProfile   WeightProfile? @relation(fields: [weightProfileId], references: [id])
+  active          Boolean        @default(true)
+
+  curriculum CurriculumSubject[]
+  classes    ClassAssignment[]
+  remedials  Remedial[]
+}
+
+/// Which subjects a strand takes per grade level and semester.
+/// strandId = null means every strand (core subjects).
+model CurriculumSubject {
+  id         Int      @id @default(autoincrement())
+  strandId   Int?
+  strand     Strand?  @relation(fields: [strandId], references: [id], onDelete: Cascade)
+  gradeLevel Int
+  semester   Int
+  subjectId  Int
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  sortOrder  Int      @default(0)
+
+  @@index([gradeLevel, semester])
+}
+
+// ---------------------------------------------------------------- learners
+
+model Learner {
+  id              Int      @id @default(autoincrement())
+  /// 12-digit Learner Reference Number
+  lrn             String   @unique
+  lastName        String
+  firstName       String
+  middleName      String?
+  extName         String?
+  /// M | F
+  sex             String
+  birthDate       DateTime
+  birthPlace      String?
+  address         String?
+  religion        String?
+  motherTongue    String?
+  ipGroup         String?
+  guardianName    String?
+  guardianRelation String?
+  guardianContact String?
+  previousSchool  String?
+  /// ACTIVE | TRANSFERRED_OUT | DROPPED_OUT | GRADUATED
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  enrollments     Enrollment[]
+  externalRecords ExternalRecord[]
+  users           User[]
+
+  @@index([lastName, firstName])
+}
+
+model Section {
+  id           Int        @id @default(autoincrement())
+  schoolYearId Int
+  schoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
+  gradeLevel   Int
+  strandId     Int
+  strand       Strand     @relation(fields: [strandId], references: [id])
+  name         String
+  adviserId    Int?
+  adviser      User?      @relation(fields: [adviserId], references: [id], onDelete: SetNull)
+  room         String?
+
+  enrollments Enrollment[]
+  classes     ClassAssignment[]
+
+  @@unique([schoolYearId, gradeLevel, strandId, name])
+}
+
+model Enrollment {
+  id           Int        @id @default(autoincrement())
+  learnerId    Int
+  learner      Learner    @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  schoolYearId Int
+  schoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
+  sectionId    Int
+  section      Section    @relation(fields: [sectionId], references: [id])
+  /// ENROLLED | LATE_ENROLLEE | TRANSFERRED_OUT | DROPPED_OUT
+  status       String     @default("ENROLLED")
+  dateEnrolled DateTime   @default(now())
+  remarks      String?
+
+  scores     Score[]
+  grades     QuarterlyGrade[]
+  attendance Attendance[]
+  values     ObservedValue[]
+  remedials  Remedial[]
+
+  @@unique([learnerId, schoolYearId])
+  @@index([sectionId])
+}
+
+/// Scholastic record from a previous school, printed on the SF10.
+model ExternalRecord {
+  id             Int     @id @default(autoincrement())
+  learnerId      Int
+  learner        Learner @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  schoolName     String
+  schoolId       String?
+  schoolYear     String
+  semester       Int
+  gradeLevel     Int
+  strandName     String?
+  sectionName    String?
+  generalAverage Int?
+  /// JSON: [{ "subject": "...", "type": "Core", "q1": 85, "q2": 86, "final": 86, "remarks": "PASSED" }]
+  subjects       String
+}
+
+// ---------------------------------------------------------------- classes and grades
+
+/// A teaching load = one subject taught to one section for one semester.
+/// This is the "class record".
+model ClassAssignment {
+  id           Int        @id @default(autoincrement())
+  schoolYearId Int
+  schoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
+  sectionId    Int
+  section      Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectId    Int
+  subject      Subject    @relation(fields: [subjectId], references: [id])
+  semester     Int
+  teacherId    Int?
+  teacher      User?      @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  quarters ClassQuarter[]
+  items    AssessmentItem[]
+  grades   QuarterlyGrade[]
+  reopens  ReopenRequest[]
+
+  @@unique([sectionId, subjectId, semester])
+  @@index([teacherId])
+}
+
+/// Approval workflow of one class record for one quarter.
+model ClassQuarter {
+  id            Int             @id @default(autoincrement())
+  classId       Int
+  class         ClassAssignment @relation(fields: [classId], references: [id], onDelete: Cascade)
+  quarter       Int
+  /// DRAFT | SUBMITTED | APPROVED | RETURNED
+  status        String          @default("DRAFT")
+  submittedAt   DateTime?
+  submittedById Int?
+  reviewedAt    DateTime?
+  reviewedById  Int?
+  note          String?
+
+  @@unique([classId, quarter])
+}
+
+model AssessmentItem {
+  id        Int             @id @default(autoincrement())
+  classId   Int
+  class     ClassAssignment @relation(fields: [classId], references: [id], onDelete: Cascade)
+  quarter   Int
+  /// WW | PT | QA
+  component String
+  title     String
+  /// Highest possible score
+  hps       Float
+  dateGiven DateTime?
+  sortOrder Int             @default(0)
+
+  scores Score[]
+
+  @@index([classId, quarter])
+}
+
+model Score {
+  id           Int            @id @default(autoincrement())
+  itemId       Int
+  item         AssessmentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  enrollmentId Int
+  enrollment   Enrollment     @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  /// null = blank
+  score        Float?
+  excused      Boolean        @default(false)
+
+  @@unique([itemId, enrollmentId])
+  @@index([enrollmentId])
+}
+
+/// Computed from the scores every time they change.
+model QuarterlyGrade {
+  id           Int             @id @default(autoincrement())
+  classId      Int
+  class        ClassAssignment @relation(fields: [classId], references: [id], onDelete: Cascade)
+  enrollmentId Int
+  enrollment   Enrollment      @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  subjectId    Int
+  semester     Int
+  quarter      Int
+  /// JSON of the QuarterResult (component totals, PS, WS) and the weights used.
+  detail       String
+  initialGrade Float?
+  quarterlyGrade Int?
+  missing      Int             @default(0)
+  computedAt   DateTime        @default(now())
+
+  @@unique([classId, enrollmentId, quarter])
+  @@index([enrollmentId, semester])
+  @@index([subjectId])
+}
+
+model ReopenRequest {
+  id            Int             @id @default(autoincrement())
+  classId       Int
+  class         ClassAssignment @relation(fields: [classId], references: [id], onDelete: Cascade)
+  quarter       Int
+  reason        String
+  /// PENDING | APPROVED | DENIED
+  status        String          @default("PENDING")
+  requestedById Int
+  decidedById   Int?
+  decidedAt     DateTime?
+  createdAt     DateTime        @default(now())
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------- report card data
+
+model Attendance {
+  id           Int        @id @default(autoincrement())
+  enrollmentId Int
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  year         Int
+  month        Int
+  daysPresent  Int
+  timesTardy   Int        @default(0)
+
+  @@unique([enrollmentId, year, month])
+}
+
+model ObservedValue {
+  id           Int        @id @default(autoincrement())
+  enrollmentId Int
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  quarter      Int
+  /// key from OBSERVED_VALUES in @bnhs/core, e.g. MD1
+  valueKey     String
+  /// AO | SO | RO | NO
+  marking      String
+
+  @@unique([enrollmentId, quarter, valueKey])
+}
+
+/// Remedial class result for a failed subject.
+model Remedial {
+  id           Int        @id @default(autoincrement())
+  enrollmentId Int
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  subjectId    Int
+  subject      Subject    @relation(fields: [subjectId], references: [id])
+  semester     Int
+  dateFrom     DateTime?
+  dateTo       DateTime?
+  mark         Int
+
+  @@unique([enrollmentId, subjectId, semester])
+}

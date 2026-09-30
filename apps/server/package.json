@@ -1,0 +1,44 @@
+{
+  "name": "@bnhs/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BNHS SHS grading system API (Fastify + Prisma + SQLite).",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "prisma migrate deploy && tsx --env-file-if-exists=.env src/index.ts",
+    "start:demo": "node scripts/start-demo.mjs",
+    "test": "vitest run",
+    "typecheck": "prisma generate && tsc --noEmit",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsx --env-file-if-exists=.env src/cli/seed.ts",
+    "db:demo": "tsx --env-file-if-exists=.env src/cli/demo.ts",
+    "db:reset-password": "tsx --env-file-if-exists=.env src/cli/reset-password.ts",
+    "demo:load": "node scripts/demo-load.mjs"
+  },
+  "dependencies": {
+    "@bnhs/core": "*",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/static": "^10.1.5",
+    "@libsql/client": "^0.17.0",
+    "@prisma/adapter-libsql": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.12.5",
+    "jose": "^6.2.12",
+    "pdfkit": "^0.20.2",
+    "prisma": "7.10.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/pdfkit": "^0.17.0",
+    "vitest": "^4.1.11"
+  }
+}
