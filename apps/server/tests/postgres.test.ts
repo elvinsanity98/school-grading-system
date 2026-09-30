@@ -14,6 +14,16 @@ describe('PostgreSQL support files', () => {
     expect(readFileSync(postgresSchemaPath, 'utf8').replace(/\r\n/g, '\n')).toBe(derived);
   });
 
+  it('both Prisma clients are always generated, whatever DATABASE_URL is at install time', () => {
+    // On a host such as Render DATABASE_URL is already set during `npm ci`, and prisma.config.ts would then
+    // pick the PostgreSQL schema for a bare `prisma generate`. Each schema must therefore be named.
+    const pkg = JSON.parse(read('../package.json')) as { scripts: Record<string, string> };
+    for (const script of ['postinstall', 'db:generate', 'typecheck']) {
+      expect(pkg.scripts[script], script).toContain('prisma generate --schema prisma/schema.prisma');
+      expect(pkg.scripts[script], script).toContain('prisma generate --schema prisma/postgres/schema.prisma');
+    }
+  });
+
   it('both databases have the same tables', () => {
     const sqlite = tables(read('../prisma/migrations/20260930044342_init/migration.sql'));
     const postgres = tables(read('../prisma/postgres/migrations/20260930000000_init/migration.sql'));
