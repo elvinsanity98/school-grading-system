@@ -98,14 +98,14 @@ model GradingPeriod {
   id           Int        @id @default(autoincrement())
   schoolYearId Int
   schoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
-  /// 1..4 (Q1 and Q2 = first semester, Q3 and Q4 = second semester)
-  quarter      Int
+  /// 1..3. A school year has three terms and each term is one grading period.
+  term         Int
   /// OPEN | CLOSED. Teachers can encode scores only while OPEN.
   status       String     @default("CLOSED")
-  /// Approved grades of this quarter are visible to learners and parents.
+  /// Approved grades of this term are visible to learners and parents.
   released     Boolean    @default(false)
 
-  @@unique([schoolYearId, quarter])
+  @@unique([schoolYearId, term])
 }
 
 /// Number of school days in a calendar month, for the SF9 attendance table.
@@ -162,19 +162,19 @@ model Subject {
   remedials  Remedial[]
 }
 
-/// Which subjects a strand takes per grade level and semester.
+/// Which subjects a strand takes per grade level and term.
 /// strandId = null means every strand (core subjects).
 model CurriculumSubject {
   id         Int      @id @default(autoincrement())
   strandId   Int?
   strand     Strand?  @relation(fields: [strandId], references: [id], onDelete: Cascade)
   gradeLevel Int
-  semester   Int
+  term       Int
   subjectId  Int
   subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   sortOrder  Int      @default(0)
 
-  @@index([gradeLevel, semester])
+  @@index([gradeLevel, term])
 }
 
 // ---------------------------------------------------------------- learners
@@ -243,7 +243,7 @@ model Enrollment {
   remarks      String?
 
   scores     Score[]
-  grades     QuarterlyGrade[]
+  grades     TermGrade[]
   attendance Attendance[]
   values     ObservedValue[]
   remedials  Remedial[]
@@ -260,7 +260,8 @@ model ExternalRecord {
   schoolName     String
   schoolId       String?
   schoolYear     String
-  semester       Int
+  /// As the other school named it, for example "1st Semester" or "Term 2".
+  period         String
   gradeLevel     Int
   strandName     String?
   sectionName    String?
@@ -271,7 +272,7 @@ model ExternalRecord {
 
 // ---------------------------------------------------------------- classes and grades
 
-/// A teaching load = one subject taught to one section for one semester.
+/// A teaching load = one subject taught to one section in one term.
 /// This is the "class record".
 model ClassAssignment {
   id           Int        @id @default(autoincrement())
@@ -281,25 +282,24 @@ model ClassAssignment {
   section      Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   subjectId    Int
   subject      Subject    @relation(fields: [subjectId], references: [id])
-  semester     Int
+  term         Int
   teacherId    Int?
   teacher      User?      @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
-  quarters ClassQuarter[]
+  workflow ClassWorkflow?
   items    AssessmentItem[]
-  grades   QuarterlyGrade[]
+  grades   TermGrade[]
   reopens  ReopenRequest[]
 
-  @@unique([sectionId, subjectId, semester])
+  @@unique([sectionId, subjectId, term])
   @@index([teacherId])
 }
 
-/// Approval workflow of one class record for one quarter.
-model ClassQuarter {
+/// Approval workflow of one class record (one term).
+model ClassWorkflow {
   id            Int             @id @default(autoincrement())
-  classId       Int
+  classId       Int             @unique
   class         ClassAssignment @relation(fields: [classId], references: [id], onDelete: Cascade)
-  quarter       Int
   /// DRAFT | SUBMITTED | APPROVED | RETURNED
   status        String          @default("DRAFT")
   submittedAt   DateTime?
@@ -307,15 +307,12 @@ model ClassQuarter {
   reviewedAt    DateTime?
   reviewedById  Int?
   note          String?
-
-  @@unique([classId, quarter])
 }
 
 model AssessmentItem {
   id        Int             @id @default(autoincrement())
   classId   Int
   class     ClassAssignment @relation(fields: [classId], references: [id], onDelete: Cascade)
-  quarter   Int
   /// WW | PT | QA
   component String
   title     String
@@ -326,7 +323,7 @@ model AssessmentItem {
 
   scores Score[]
 
-  @@index([classId, quarter])
+  @@index([classId])
 }
 
 model Score {
@@ -343,25 +340,24 @@ model Score {
   @@index([enrollmentId])
 }
 
-/// Computed from the scores every time they change.
-model QuarterlyGrade {
+/// The grade of one learner in one subject for one term. Computed from the scores every time they change.
+model TermGrade {
   id           Int             @id @default(autoincrement())
   classId      Int
   class        ClassAssignment @relation(fields: [classId], references: [id], onDelete: Cascade)
   enrollmentId Int
   enrollment   Enrollment      @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
   subjectId    Int
-  semester     Int
-  quarter      Int
-  /// JSON of the QuarterResult (component totals, PS, WS) and the weights used.
+  term         Int
+  /// JSON of the TermGradeResult (component totals, PS, WS) and the weights used.
   detail       String
   initialGrade Float?
-  quarterlyGrade Int?
+  termGrade    Int?
   missing      Int             @default(0)
   computedAt   DateTime        @default(now())
 
-  @@unique([classId, enrollmentId, quarter])
-  @@index([enrollmentId, semester])
+  @@unique([classId, enrollmentId])
+  @@index([enrollmentId, term])
   @@index([subjectId])
 }
 
@@ -369,7 +365,6 @@ model ReopenRequest {
   id            Int             @id @default(autoincrement())
   classId       Int
   class         ClassAssignment @relation(fields: [classId], references: [id], onDelete: Cascade)
-  quarter       Int
   reason        String
   /// PENDING | APPROVED | DENIED
   status        String          @default("PENDING")
@@ -399,13 +394,13 @@ model ObservedValue {
   id           Int        @id @default(autoincrement())
   enrollmentId Int
   enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
-  quarter      Int
+  term         Int
   /// key from OBSERVED_VALUES in @bnhs/core, e.g. MD1
   valueKey     String
   /// AO | SO | RO | NO
   marking      String
 
-  @@unique([enrollmentId, quarter, valueKey])
+  @@unique([enrollmentId, term, valueKey])
 }
 
 /// Remedial class result for a failed subject.
@@ -415,10 +410,10 @@ model Remedial {
   enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
   subjectId    Int
   subject      Subject    @relation(fields: [subjectId], references: [id])
-  semester     Int
+  term         Int
   dateFrom     DateTime?
   dateTo       DateTime?
   mark         Int
 
-  @@unique([enrollmentId, subjectId, semester])
+  @@unique([enrollmentId, subjectId, term])
 }

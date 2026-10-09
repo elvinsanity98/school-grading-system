@@ -87,7 +87,7 @@ export function SystemPage() {
             <>
               <CardTitle sub="Everything is stored in one file on the school server">Backup</CardTitle>
               <div className="flex flex-col items-start gap-3 text-sm">
-                <p>Download a copy of the whole database (learners, grades, users). Keep it somewhere safe, for example a flash drive kept by the school head. Do this at least after each quarter is approved.</p>
+                <p>Download a copy of the whole database (learners, grades, users). Keep it somewhere safe, for example a flash drive kept by the school head. Do this at least after each term is approved.</p>
                 <Button variant="primary" icon={<DatabaseBackup className="size-4" />} onClick={() => downloadReport('/admin/backup', 'bnhs-backup.db').catch((e) => toast.error(errorMessage(e)))}>Download backup</Button>
                 <p className="text-xs text-muted">To restore: stop the server, replace <code>apps/server/data/bnhs.db</code> with the backup file, start the server again. See docs/DEPLOYMENT.md.</p>
               </div>
@@ -110,7 +110,7 @@ export function SystemPage() {
           <div className="mt-3"><Button icon={<RefreshCw className="size-4" />} loading={recompute.isPending} onClick={() => recompute.mutate()}>Recompute all open grades</Button></div>
         </Card>
         <Card className="lg:col-span-2">
-          <CardTitle sub="DepEd Order No. 8, s. 2015: initial grade to transmuted (quarterly) grade">Transmutation table</CardTitle>
+          <CardTitle sub="DepEd Order No. 8, s. 2015: initial grade to transmuted (term) grade">Transmutation table</CardTitle>
           <div className="grid gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
             {[0, 1, 2, 3].map((col) => (
               <table key={col} className="w-full text-sm tnum">

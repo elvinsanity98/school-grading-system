@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeComponent,
-  computeQuarter,
+  computeTermGrade,
   DEFAULT_HONORS_POLICY,
   descriptorFor,
-  finalGrade,
   formatLearnerName,
   generalAverage,
   honorsFor,
@@ -117,9 +116,9 @@ describe('computeComponent', () => {
   });
 });
 
-describe('computeQuarter', () => {
+describe('computeTermGrade', () => {
   it('worked example: core subject 25/50/25', () => {
-    const r = computeQuarter({
+    const r = computeTermGrade({
       weights: { ww: 25, pt: 50, qa: 25 },
       ww: [{ hps: 50, score: 40 }],
       pt: [{ hps: 100, score: 90 }],
@@ -130,11 +129,11 @@ describe('computeQuarter', () => {
     expect(r.pt.ws).toBe(45);
     expect(r.qa.ws).toBe(18.75);
     expect(r.initialGrade).toBe(83.75);
-    expect(r.quarterlyGrade).toBe(89);
+    expect(r.termGrade).toBe(89);
   });
 
   it('worked example: TVL 20/60/20 with a low performer', () => {
-    const r = computeQuarter({
+    const r = computeTermGrade({
       weights: { ww: 20, pt: 60, qa: 20 },
       ww: [{ hps: 20, score: 10 }],
       pt: [{ hps: 50, score: 20 }],
@@ -142,29 +141,29 @@ describe('computeQuarter', () => {
     });
     // 50 x .2 = 10 ; 40 x .6 = 24 ; 40 x .2 = 8 => 42.00
     expect(r.initialGrade).toBe(42);
-    expect(r.quarterlyGrade).toBe(70);
+    expect(r.termGrade).toBe(70);
   });
 
   it('perfect scores give 100', () => {
-    const r = computeQuarter({
+    const r = computeTermGrade({
       weights: { ww: 35, pt: 40, qa: 25 },
       ww: [{ hps: 10, score: 10 }],
       pt: [{ hps: 10, score: 10 }],
       qa: [{ hps: 10, score: 10 }],
     });
     expect(r.initialGrade).toBe(100);
-    expect(r.quarterlyGrade).toBe(100);
+    expect(r.termGrade).toBe(100);
   });
 
   it('is incomplete while a component has no items', () => {
-    const r = computeQuarter({
+    const r = computeTermGrade({
       weights: { ww: 25, pt: 50, qa: 25 },
       ww: [{ hps: 10, score: 10 }],
       pt: [{ hps: 10, score: 10 }],
       qa: [],
     });
     expect(r.initialGrade).toBeNull();
-    expect(r.quarterlyGrade).toBeNull();
+    expect(r.termGrade).toBeNull();
   });
 
   it('rejects weights that do not add up to 100', () => {
@@ -174,19 +173,8 @@ describe('computeQuarter', () => {
   });
 });
 
-describe('final grade and general average', () => {
-  it('averages two quarters and rounds half up', () => {
-    expect(finalGrade(80, 85)).toBe(83); // 82.5 -> 83
-    expect(finalGrade(75, 76)).toBe(76); // 75.5 -> 76
-    expect(finalGrade(90, 90)).toBe(90);
-  });
-
-  it('needs both quarters', () => {
-    expect(finalGrade(90, null)).toBeNull();
-    expect(finalGrade(undefined, 90)).toBeNull();
-  });
-
-  it('general average is the mean of final grades, whole number', () => {
+describe('general average and remedial', () => {
+  it('general average is the mean of the term grades, whole number', () => {
     expect(generalAverage([85, 86, 90])).toEqual({ average: 87, complete: true, count: 3 });
     expect(generalAverage([80, 81])).toEqual({ average: 81, complete: true, count: 2 }); // 80.5 -> 81
   });

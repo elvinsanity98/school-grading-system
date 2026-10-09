@@ -34,7 +34,7 @@ export interface School {
 
 export interface Period {
   id: number;
-  quarter: number;
+  term: number;
   status: 'OPEN' | 'CLOSED';
   released: boolean;
 }
@@ -91,7 +91,7 @@ export interface CurriculumRow {
   id: number;
   strandId: number | null;
   gradeLevel: number;
-  semester: number;
+  term: number;
   subjectId: number;
   sortOrder: number;
   subject: Subject;
@@ -161,7 +161,8 @@ export interface LearnerDetail extends Learner {
     schoolName: string;
     schoolId: string | null;
     schoolYear: string;
-    semester: number;
+    /** As the other school named it, for example "1st Semester". */
+    period: string;
     gradeLevel: number;
     strandName: string | null;
     sectionName: string | null;
@@ -180,18 +181,13 @@ export interface EnrollmentRow {
   learner: LearnerBrief;
 }
 
-export interface ClassStatus {
-  quarter: number;
-  status: string;
-}
-
 export interface ClassRow {
   id: number;
-  semester: number;
+  term: number;
   subject: { id: number; code: string; name: string; type: string };
   section: { id: number; name: string; gradeLevel: number; strand: string; learners: number };
   teacher: { id: number; fullName: string } | null;
-  statuses: ClassStatus[];
+  status: string;
 }
 
 export interface RecordItem {
@@ -211,13 +207,11 @@ export interface RecordLearner extends LearnerBrief {
   pt: ComponentResult;
   qa: ComponentResult;
   initialGrade: number | null;
-  quarterlyGrade: number | null;
+  termGrade: number | null;
   missing: number;
-  semesterView: { q1: number | null; q2: number | null; final: number | null };
 }
 
 export interface WorkflowState {
-  quarter: number;
   status: string;
   note: string | null;
   submittedAt: string | null;
@@ -229,26 +223,18 @@ export interface WorkflowState {
 export interface RecordPayload {
   class: {
     id: number;
-    semester: number;
+    term: number;
     schoolYear: string;
     subject: { id: number; code: string; name: string; type: string };
     section: { id: number; name: string; gradeLevel: number; strand: string; track: string };
     teacher: { id: number; fullName: string } | null;
     weights: Weights;
   };
-  quarter: number;
   workflow: WorkflowState;
   canEdit: boolean;
   lockedReason: string | null;
   items: RecordItem[];
   learners: RecordLearner[];
-}
-
-export interface CardQuarter {
-  quarter: number;
-  grade: number | null;
-  status: string;
-  missing: number;
 }
 
 export interface CardSubject {
@@ -257,8 +243,10 @@ export interface CardSubject {
   code: string;
   name: string;
   type: string;
-  quarters: CardQuarter[];
-  finalGrade: number | null;
+  /** The term grade; null while hidden or incomplete. */
+  grade: number | null;
+  status: string;
+  missing: number;
   remark: Remark;
   remedial: { mark: number; recomputed: number; dateFrom: string | null; dateTo: string | null; passed: boolean } | null;
 }
@@ -269,29 +257,28 @@ export interface Card {
   status: string;
   section: { id: number; name: string; gradeLevel: number; strandCode: string; strandName: string; track: string; adviser: string | null };
   schoolYear: { id: number; name: string };
-  semester: number;
-  quarters: [number, number];
+  term: number;
   subjects: CardSubject[];
   generalAverage: number | null;
   complete: boolean;
   honors: HonorsLevel | null;
   attendance: Array<{ year: number; month: number; schoolDays: number | null; present: number | null; absent: number | null; tardy: number | null }>;
-  values: Record<string, Record<number, string>>;
+  /** values[valueKey] = AO | SO | RO | NO for this term */
+  values: Record<string, string>;
   hasHidden: boolean;
 }
 
 export interface SummaryPayload {
   section: { id: number; name: string; gradeLevel: number; strand: string; adviser: string | null; schoolYear: string };
-  semester: number;
-  quarters: [number, number];
+  term: number;
   visibility: string;
   passing: number;
-  subjects: Array<{ classId: number; subjectId: number; name: string; type: string; teacher: string | null; statuses: ClassStatus[] }>;
+  subjects: Array<{ classId: number; subjectId: number; name: string; type: string; teacher: string | null; status: string }>;
   learners: Array<{
     enrollmentId: number;
     status: string;
     learner: LearnerBrief;
-    grades: Record<string, { q1: number | null; q2: number | null; final: number | null; remark: Remark; remedial: CardSubject['remedial'] }>;
+    grades: Record<string, { grade: number | null; remark: Remark; remedial: CardSubject['remedial'] }>;
     generalAverage: number | null;
     complete: boolean;
     honors: HonorsLevel | null;
@@ -303,7 +290,7 @@ export interface SummaryPayload {
 
 export interface ApprovalRow {
   classId: number;
-  quarter: number;
+  term: number;
   status: string;
   note: string | null;
   submittedAt: string | null;
@@ -317,7 +304,7 @@ export interface ApprovalRow {
 export interface ReopenRow {
   id: number;
   classId: number;
-  quarter: number;
+  term: number;
   reason: string;
   status: string;
   createdAt: string;
@@ -332,11 +319,10 @@ export type Dashboard =
   | {
       kind: 'office';
       year: { id: number; name: string };
-      quarter: number;
-      semester: number;
+      term: number;
       counts: { enrolled: number; sections: number; teachers: number; classes: number; unassignedClasses: number };
       enrollment: Array<{ gradeLevel: number; strand: string; count: number }>;
-      progress: Array<{ quarter: number; total: number; submitted: number; approved: number; returned: number; draft: number; periodStatus: string; released: boolean }>;
+      progress: Array<{ term: number; total: number; submitted: number; approved: number; returned: number; draft: number; periodStatus: string; released: boolean }>;
       pendingApprovals: number;
       pendingReopen: number;
       distribution: Array<{ label: string; min: number; max: number; count: number }>;
@@ -346,15 +332,15 @@ export type Dashboard =
   | {
       kind: 'teacher';
       year: { id: number; name: string };
-      quarter: number;
-      classes: Array<{ id: number; semester: number; subject: string; section: string; strand: string; learners: number; statuses: ClassStatus[] }>;
+      term: number;
+      classes: Array<{ id: number; term: number; subject: string; section: string; strand: string; learners: number; status: string }>;
       advisory: Array<{ id: number; name: string; gradeLevel: number; strand: string; learners: number }>;
-      openQuarters: number[];
+      openTerms: number[];
       pendingRequests: number;
     };
 
 export interface AtRisk {
-  quarter: number;
+  term: number;
   passing: number;
   learners: Array<{ enrollmentId: number; learner: LearnerBrief; section: string; subjects: Array<{ subject: string; grade: number }> }>;
 }

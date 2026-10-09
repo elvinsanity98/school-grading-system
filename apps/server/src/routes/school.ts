@@ -73,7 +73,7 @@ export default async function schoolRoutes(app: FastifyInstance) {
       startDate: iso(y.startDate),
       endDate: iso(y.endDate),
       isCurrent: y.isCurrent,
-      periods: y.periods.sort((a, b) => a.quarter - b.quarter),
+      periods: y.periods.sort((a, b) => a.term - b.term),
     }));
   });
 
@@ -123,7 +123,7 @@ export default async function schoolRoutes(app: FastifyInstance) {
     const user = me(req);
     if (body.released !== undefined && user.role !== 'ADMIN' && !isOffice(user)) throw forbidden();
     const period = await db.gradingPeriod.update({ where: { id }, data: body });
-    await audit(db, req, 'PERIOD_UPDATED', 'GradingPeriod', id, { quarter: period.quarter, ...body });
+    await audit(db, req, 'PERIOD_UPDATED', 'GradingPeriod', id, { term: period.term, ...body });
     return period;
   });
 

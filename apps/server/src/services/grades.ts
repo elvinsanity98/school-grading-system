@@ -1,11 +1,4 @@
-import {
-  computeQuarter,
-  semesterOfQuarter,
-  type Component,
-  type ItemScore,
-  type QuarterResult,
-  type Weights,
-} from '@bnhs/core';
+import { computeTermGrade, type Component, type ItemScore, type TermGradeResult, type Weights } from '@bnhs/core';
 import type { Db, Tx } from '../db';
 import { notFound } from '../errors';
 
@@ -70,7 +63,7 @@ export async function classWeights(db: Db | Tx, cls: LoadedClass): Promise<Weigh
 
 // ------------------------------------------------------------------ computation
 
-export interface GradeDetail extends QuarterResult {
+export interface GradeDetail extends TermGradeResult {
   weights: Weights;
 }
 
@@ -90,23 +83,22 @@ export function computeForEnrollment(items: ItemWithScores[], enrollmentId: numb
     if (!bucket) continue;
     bucket.push({ hps: item.hps, score: row?.score ?? null, excused: row?.excused ?? false });
   }
-  const result = computeQuarter({ ww: byComponent.WW, pt: byComponent.PT, qa: byComponent.QA, weights });
+  const result = computeTermGrade({ ww: byComponent.WW, pt: byComponent.PT, qa: byComponent.QA, weights });
   return { ...result, weights };
 }
 
 /**
- * Recomputes and stores the quarterly grade of every learner in the class for one quarter.
+ * Recomputes and stores the term grade of every learner in the class.
  * Call after any change to items, scores, weights or enrollment.
  */
-export async function recomputeClassQuarter(db: Db, classId: number, quarter: number): Promise<void> {
+export async function recomputeClass(db: Db, classId: number): Promise<void> {
   const cls = await loadClass(db, classId);
   const weights = await classWeights(db, cls);
   const items = await db.assessmentItem.findMany({
-    where: { classId, quarter },
+    where: { classId },
     include: { scores: { select: { enrollmentId: true, score: true, excused: true } } },
   });
   const enrollments = await db.enrollment.findMany({ where: { sectionId: cls.sectionId }, select: { id: true } });
-  const semester = semesterOfQuarter(quarter);
   const now = new Date();
 
   const rows = enrollments.map((e) => {
@@ -114,65 +106,56 @@ export async function recomputeClassQuarter(db: Db, classId: number, quarter: nu
     return {
       classId,
       enrollmentId: e.id,
-      quarter,
       subjectId: cls.subjectId,
-      semester,
+      term: cls.term,
       detail: JSON.stringify(detail),
       initialGrade: detail.initialGrade,
-      quarterlyGrade: detail.quarterlyGrade,
+      termGrade: detail.termGrade,
       missing: detail.missing,
       computedAt: now,
     };
   });
-  // Replace the whole quarter in two statements. One upsert per learner would be dozens of round
+  // Replace the whole class in two statements. One upsert per learner would be dozens of round
   // trips, which is slow on a hosted database.
-  await db.$transaction([
-    db.quarterlyGrade.deleteMany({ where: { classId, quarter } }),
-    db.quarterlyGrade.createMany({ data: rows }),
-  ]);
+  await db.$transaction([db.termGrade.deleteMany({ where: { classId } }), db.termGrade.createMany({ data: rows })]);
 }
 
 /** After a learner joins or changes section, bring the stored grades of that section up to date. */
 export async function recomputeSection(db: Db, sectionId: number): Promise<void> {
-  const quarters = await db.assessmentItem.findMany({
+  const classes = await db.assessmentItem.findMany({
     where: { class: { sectionId } },
-    select: { classId: true, quarter: true },
-    distinct: ['classId', 'quarter'],
+    select: { classId: true },
+    distinct: ['classId'],
   });
-  for (const q of quarters) await recomputeClassQuarter(db, q.classId, q.quarter);
+  for (const c of classes) await recomputeClass(db, c.classId);
 }
 
 // ------------------------------------------------------------------ workflow
 
-export interface QuarterState {
-  quarter: number;
+export interface ClassState {
   status: string;
   note: string | null;
   submittedAt: Date | null;
   reviewedAt: Date | null;
+  /** The term's grading period: OPEN or CLOSED for encoding. */
   periodStatus: string;
   released: boolean;
 }
 
-/** Workflow status of a class for all four quarters (DRAFT when never touched). */
-export async function quarterStates(db: Db, cls: { id: number; schoolYearId: number }): Promise<QuarterState[]> {
-  const [rows, periods] = await Promise.all([
-    db.classQuarter.findMany({ where: { classId: cls.id } }),
-    db.gradingPeriod.findMany({ where: { schoolYearId: cls.schoolYearId } }),
+/** Approval status of a class record (DRAFT when nobody has touched it) and the state of its term. */
+export async function classState(db: Db, cls: { id: number; schoolYearId: number; term: number }): Promise<ClassState> {
+  const [wf, period] = await Promise.all([
+    db.classWorkflow.findUnique({ where: { classId: cls.id } }),
+    db.gradingPeriod.findUnique({ where: { schoolYearId_term: { schoolYearId: cls.schoolYearId, term: cls.term } } }),
   ]);
-  return [1, 2, 3, 4].map((quarter) => {
-    const r = rows.find((x) => x.quarter === quarter);
-    const p = periods.find((x) => x.quarter === quarter);
-    return {
-      quarter,
-      status: r?.status ?? 'DRAFT',
-      note: r?.note ?? null,
-      submittedAt: r?.submittedAt ?? null,
-      reviewedAt: r?.reviewedAt ?? null,
-      periodStatus: p?.status ?? 'CLOSED',
-      released: p?.released ?? false,
-    };
-  });
+  return {
+    status: wf?.status ?? 'DRAFT',
+    note: wf?.note ?? null,
+    submittedAt: wf?.submittedAt ?? null,
+    reviewedAt: wf?.reviewedAt ?? null,
+    periodStatus: period?.status ?? 'CLOSED',
+    released: period?.released ?? false,
+  };
 }
 
 /** Sort used on DepEd class records: males first, then females, each alphabetical. */

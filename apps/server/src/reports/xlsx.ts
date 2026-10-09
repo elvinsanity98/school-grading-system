@@ -33,14 +33,13 @@ export interface ClassRecordMeta {
   section: string;
   strand: string;
   teacher: string;
-  semester: number;
-  quarter: number;
+  term: number;
   status: string;
 }
 
 export async function classRecordXlsx(meta: ClassRecordMeta, data: RecordData): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(`Q${meta.quarter} Class Record`.slice(0, 31), {
+  const ws = wb.addWorksheet(`Term ${meta.term} Class Record`.slice(0, 31), {
     views: [{ state: 'frozen', xSplit: 3, ySplit: 8 }],
     pageSetup: { orientation: 'landscape', paperSize: 5, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
@@ -61,8 +60,8 @@ export async function classRecordXlsx(meta: ClassRecordMeta, data: RecordData): 
     return { c, items, start, totalCol, psCol, wsCol, end: wsCol };
   });
   const initialCol = col++;
-  const quarterlyCol = col++;
-  const lastCol = quarterlyCol;
+  const termCol = col++;
+  const lastCol = termCol;
 
   const put = (r: number, c: number, v: ExcelJS.CellValue, style: Parameters<typeof boxed>[1] = {}) => {
     const cell = ws.getCell(r, c);
@@ -75,7 +74,7 @@ export async function classRecordXlsx(meta: ClassRecordMeta, data: RecordData): 
   ws.getCell(1, 1).value = meta.school.toUpperCase();
   ws.getCell(1, 1).font = { bold: true, size: 13 };
   ws.mergeCells(2, 1, 2, Math.max(lastCol, 10));
-  ws.getCell(2, 1).value = `CLASS RECORD  -  ${meta.schoolYear}  -  ${meta.semester === 1 ? '1st' : '2nd'} Semester  -  Quarter ${meta.quarter}`;
+  ws.getCell(2, 1).value = `CLASS RECORD  -  ${meta.schoolYear}  -  Term ${meta.term}`;
   ws.getCell(2, 1).font = { bold: true, size: 11 };
   ws.getCell(3, 1).value = `Subject: ${meta.subject}`;
   ws.getCell(3, 1).font = { bold: true };
@@ -109,8 +108,8 @@ export async function classRecordXlsx(meta: ClassRecordMeta, data: RecordData): 
     put(8, l.wsCol, `${weightOf(l.c)}%`, { bold: true, fill: HEAD_FILL, align: 'center' });
   }
   put(6, initialCol, 'Initial Grade', { bold: true, fill: HEAD_FILL, align: 'center', wrap: true });
-  put(6, quarterlyCol, 'Quarterly Grade', { bold: true, fill: HEAD_FILL, align: 'center', wrap: true });
-  for (const c of [initialCol, quarterlyCol]) {
+  put(6, termCol, 'Term Grade', { bold: true, fill: HEAD_FILL, align: 'center', wrap: true });
+  for (const c of [initialCol, termCol]) {
     put(7, c, null, { fill: HEAD_FILL });
     put(8, c, null, { fill: HEAD_FILL });
     ws.mergeCells(6, c, 8, c);
@@ -142,8 +141,8 @@ export async function classRecordXlsx(meta: ClassRecordMeta, data: RecordData): 
         put(row, lay.wsCol, res.ws, { align: 'center' });
       }
       put(row, initialCol, l.initialGrade, { align: 'center' });
-      const q = put(row, quarterlyCol, l.quarterlyGrade, { bold: true, align: 'center' });
-      if (l.quarterlyGrade != null && l.quarterlyGrade < 75) q.font = { bold: true, size: 10, color: { argb: 'FFB91C1C' } };
+      const q = put(row, termCol, l.termGrade, { bold: true, align: 'center' });
+      if (l.termGrade != null && l.termGrade < 75) q.font = { bold: true, size: 10, color: { argb: 'FFB91C1C' } };
       row++;
     });
   }
@@ -153,7 +152,7 @@ export async function classRecordXlsx(meta: ClassRecordMeta, data: RecordData): 
   ws.getColumn(3).width = 34;
   for (let c = 4; c <= lastCol; c++) ws.getColumn(c).width = 9;
   ws.getColumn(initialCol).width = 10;
-  ws.getColumn(quarterlyCol).width = 11;
+  ws.getColumn(termCol).width = 11;
   return toBuffer(wb);
 }
 
@@ -165,7 +164,7 @@ export interface SummaryData {
   section: string;
   strand: string;
   adviser: string;
-  semester: number;
+  term: number;
   subjects: Array<{ subjectId: number; name: string }>;
   learners: Array<{
     lrn: string;
@@ -174,7 +173,7 @@ export interface SummaryData {
     middleName: string | null;
     extName: string | null;
     sex: string;
-    grades: Record<number, { q1: number | null; q2: number | null; final: number | null }>;
+    grades: Record<number, number | null>;
     generalAverage: number | null;
     remark: string;
     honors: HonorsLevel | null;
@@ -184,16 +183,16 @@ export interface SummaryData {
 
 export async function sectionSummaryXlsx(d: SummaryData): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(`Sem ${d.semester} Summary`, {
+  const ws = wb.addWorksheet(`Term ${d.term} Summary`, {
     views: [{ state: 'frozen', xSplit: 3, ySplit: 6 }],
     pageSetup: { orientation: 'landscape', paperSize: 5, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
-  const lastCol = 3 + d.subjects.length * 3 + 3;
+  const lastCol = 3 + d.subjects.length + 3;
   ws.mergeCells(1, 1, 1, Math.max(lastCol, 8));
   ws.getCell(1, 1).value = d.school.toUpperCase();
   ws.getCell(1, 1).font = { bold: true, size: 13 };
   ws.mergeCells(2, 1, 2, Math.max(lastCol, 8));
-  ws.getCell(2, 1).value = `SUMMARY OF GRADES  -  ${d.schoolYear}  -  ${d.semester === 1 ? '1st' : '2nd'} Semester`;
+  ws.getCell(2, 1).value = `SUMMARY OF GRADES  -  ${d.schoolYear}  -  Term ${d.term}`;
   ws.getCell(2, 1).font = { bold: true, size: 11 };
   ws.getCell(3, 1).value = `Section: ${d.section} (${d.strand})     Adviser: ${d.adviser || '-'}`;
 
@@ -203,8 +202,6 @@ export async function sectionSummaryXlsx(d: SummaryData): Promise<Buffer> {
     boxed(cell, style);
     return cell;
   };
-  const q1 = d.semester === 1 ? 'Q1' : 'Q3';
-  const q2 = d.semester === 1 ? 'Q2' : 'Q4';
 
   for (const c of [1, 2, 3]) {
     put(5, c, null, { bold: true, fill: HEAD_FILL });
@@ -217,21 +214,18 @@ export async function sectionSummaryXlsx(d: SummaryData): Promise<Buffer> {
   ws.mergeCells(5, 2, 6, 2);
   ws.mergeCells(5, 3, 6, 3);
   d.subjects.forEach((s, i) => {
-    const c = 4 + i * 3;
-    for (let k = 0; k < 3; k++) put(5, c + k, null, { bold: true, fill: HEAD_FILL, align: 'center', wrap: true });
-    ws.getCell(5, c).value = s.name;
-    ws.mergeCells(5, c, 5, c + 2);
-    put(6, c, q1, { bold: true, fill: HEAD_FILL, align: 'center' });
-    put(6, c + 1, q2, { bold: true, fill: HEAD_FILL, align: 'center' });
-    put(6, c + 2, 'Final', { bold: true, fill: HEAD_FILL, align: 'center' });
+    const c = 4 + i;
+    put(5, c, s.name, { bold: true, fill: HEAD_FILL, align: 'center', wrap: true });
+    put(6, c, null, { bold: true, fill: HEAD_FILL, align: 'center' });
+    ws.mergeCells(5, c, 6, c);
   });
-  const gaCol = 4 + d.subjects.length * 3;
+  const gaCol = 4 + d.subjects.length;
   for (const [k, label] of ['General Average', 'Remarks', 'Honors'].entries()) {
     put(5, gaCol + k, label, { bold: true, fill: HEAD_FILL, align: 'center', wrap: true });
     put(6, gaCol + k, null, { fill: HEAD_FILL });
     ws.mergeCells(5, gaCol + k, 6, gaCol + k);
   }
-  ws.getRow(5).height = 58;
+  ws.getRow(5).height = 70;
 
   let row = 7;
   for (const [label, sex] of [
@@ -247,12 +241,9 @@ export async function sectionSummaryXlsx(d: SummaryData): Promise<Buffer> {
       put(row, 2, l.lrn, { align: 'center' });
       put(row, 3, formatLearnerName(l));
       d.subjects.forEach((s, k) => {
-        const g = l.grades[s.subjectId];
-        const c = 4 + k * 3;
-        put(row, c, g?.q1 ?? null, { align: 'center' });
-        put(row, c + 1, g?.q2 ?? null, { align: 'center' });
-        const f = put(row, c + 2, g?.final ?? null, { bold: true, align: 'center' });
-        if (g?.final != null && g.final < d.passing) f.font = { bold: true, size: 10, color: { argb: 'FFB91C1C' } };
+        const g = l.grades[s.subjectId] ?? null;
+        const f = put(row, 4 + k, g, { bold: true, align: 'center' });
+        if (g != null && g < d.passing) f.font = { bold: true, size: 10, color: { argb: 'FFB91C1C' } };
       });
       put(row, gaCol, l.generalAverage, { bold: true, align: 'center' });
       put(row, gaCol + 1, l.remark === 'PASSED' ? 'Passed' : l.remark === 'FAILED' ? 'Failed' : 'Incomplete', { align: 'center' });
@@ -263,7 +254,7 @@ export async function sectionSummaryXlsx(d: SummaryData): Promise<Buffer> {
   ws.getColumn(1).width = 5;
   ws.getColumn(2).width = 15;
   ws.getColumn(3).width = 34;
-  for (let c = 4; c < gaCol; c++) ws.getColumn(c).width = 6.5;
+  for (let c = 4; c < gaCol; c++) ws.getColumn(c).width = 12;
   ws.getColumn(gaCol).width = 11;
   ws.getColumn(gaCol + 1).width = 11;
   ws.getColumn(gaCol + 2).width = 20;

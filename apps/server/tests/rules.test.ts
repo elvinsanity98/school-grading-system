@@ -66,22 +66,22 @@ describe('school rules', () => {
   });
 
   it('weights follow the subject type and the track of the strand (DO 8 s. 2015)', async () => {
-    const weightsOf = async (sectionId: number, code: string, semester: number) => {
-      const classes = (await registrar.get(`/api/classes?sectionId=${sectionId}&semester=${semester}`)).json as Array<{ id: number; subject: { code: string } }>;
+    const weightsOf = async (sectionId: number, code: string) => {
+      const classes = (await registrar.get(`/api/classes?sectionId=${sectionId}`)).json as Array<{ id: number; subject: { code: string } }>;
       const c = classes.find((x) => x.subject.code === code)!;
       expect(c, `${code} in section ${sectionId}`).toBeTruthy();
       await registrar.put(`/api/classes/${c.id}`, { teacherId: ids.adviserId });
-      return (await adviser.get(`/api/classes/${c.id}/record?quarter=${semester === 1 ? 1 : 3}`)).json.class.weights;
+      return (await adviser.get(`/api/classes/${c.id}/record`)).json.class.weights;
     };
     // core subject: same in every track
-    expect(await weightsOf(ids.turing, 'PHILO', 2)).toEqual({ ww: 25, pt: 50, qa: 25 });
-    expect(await weightsOf(ids.curie, 'PHILO', 2)).toEqual({ ww: 25, pt: 50, qa: 25 });
+    expect(await weightsOf(ids.turing, 'PHILO')).toEqual({ ww: 25, pt: 50, qa: 25 });
+    expect(await weightsOf(ids.curie, 'PHILO')).toEqual({ ww: 25, pt: 50, qa: 25 });
     // applied subject: academic 25/45/30, TVL 20/60/20
-    expect(await weightsOf(ids.curie, 'RESEARCH2', 1)).toEqual({ ww: 25, pt: 45, qa: 30 });
-    expect(await weightsOf(ids.turing, 'RESEARCH2', 1)).toEqual({ ww: 20, pt: 60, qa: 20 });
+    expect(await weightsOf(ids.curie, 'RESEARCH2')).toEqual({ ww: 25, pt: 45, qa: 30 });
+    expect(await weightsOf(ids.turing, 'RESEARCH2')).toEqual({ ww: 20, pt: 60, qa: 20 });
     // work immersion: academic 35/40/25, TVL 20/60/20
-    expect(await weightsOf(ids.curie, 'WORKIMM', 2)).toEqual({ ww: 35, pt: 40, qa: 25 });
-    expect(await weightsOf(ids.turing, 'WORKIMM', 2)).toEqual({ ww: 20, pt: 60, qa: 20 });
+    expect(await weightsOf(ids.curie, 'WORKIMM')).toEqual({ ww: 35, pt: 40, qa: 25 });
+    expect(await weightsOf(ids.turing, 'WORKIMM')).toEqual({ ww: 20, pt: 60, qa: 20 });
   });
 
   it('only administrators change weights, and they must add up to 100', async () => {
@@ -107,7 +107,7 @@ describe('school rules', () => {
     // January belongs to the second calendar year of the school year
     expect((await adviser.get(`${path}?month=1`)).json.year).toBe(2027);
 
-    const card = (await adviser.get(`/api/enrollments/${enrollmentId}/card?semester=1&visibility=all`)).json;
+    const card = (await adviser.get(`/api/enrollments/${enrollmentId}/card?term=1&visibility=all`)).json;
     const sep = card.attendance.find((m: { month: number }) => m.month === 9);
     expect(sep).toMatchObject({ schoolDays: 20, present: 18, absent: 2, tardy: 2 });
 
@@ -116,45 +116,43 @@ describe('school rules', () => {
     expect((await other.put(path, { month: 9, entries: [] })).status).toBe(403);
   });
 
-  it('observed values: known statements only, saved per quarter', async () => {
+  it('observed values: known statements only, saved per term', async () => {
     const path = `/api/sections/${ids.turing}/values`;
     const enrollmentId = ids.enrollment;
-    expect((await adviser.put(path, { quarter: 1, entries: [{ enrollmentId, valueKey: 'ZZ9', marking: 'AO' }] })).status).toBe(400);
-    expect((await adviser.put(path, { quarter: 1, entries: [{ enrollmentId, valueKey: 'MD1', marking: 'XX' }] })).status).toBe(400);
-    expect((await adviser.put(path, { quarter: 1, entries: [{ enrollmentId, valueKey: 'MD1', marking: 'AO' }, { enrollmentId, valueKey: 'MB2', marking: 'SO' }] })).status).toBe(200);
-    expect((await adviser.get(`${path}?quarter=1`)).json.learners[0].marks).toEqual({ MD1: 'AO', MB2: 'SO' });
-    expect((await adviser.get(`${path}?quarter=2`)).json.learners[0].marks).toEqual({});
+    expect((await adviser.put(path, { term: 1, entries: [{ enrollmentId, valueKey: 'ZZ9', marking: 'AO' }] })).status).toBe(400);
+    expect((await adviser.put(path, { term: 1, entries: [{ enrollmentId, valueKey: 'MD1', marking: 'XX' }] })).status).toBe(400);
+    expect((await adviser.put(path, { term: 1, entries: [{ enrollmentId, valueKey: 'MD1', marking: 'AO' }, { enrollmentId, valueKey: 'MB2', marking: 'SO' }] })).status).toBe(200);
+    expect((await adviser.get(`${path}?term=1`)).json.learners[0].marks).toEqual({ MD1: 'AO', MB2: 'SO' });
+    expect((await adviser.get(`${path}?term=2`)).json.learners[0].marks).toEqual({});
     // clearing a mark
-    await adviser.put(path, { quarter: 1, entries: [{ enrollmentId, valueKey: 'MB2', marking: null }] });
-    expect((await adviser.get(`${path}?quarter=1`)).json.learners[0].marks).toEqual({ MD1: 'AO' });
+    await adviser.put(path, { term: 1, entries: [{ enrollmentId, valueKey: 'MB2', marking: null }] });
+    expect((await adviser.get(`${path}?term=1`)).json.learners[0].marks).toEqual({ MD1: 'AO' });
   });
 
   it('remedial classes: recomputed final grade is the average of final grade and remedial mark', async () => {
-    // A failed subject: approved quarter grades 70 and 72 => final 71
-    const classes = (await registrar.get(`/api/classes?sectionId=${ids.turing}&semester=1`)).json as Array<{ id: number; subject: { id: number; code: string } }>;
+    // A failed subject: an approved term grade of 71
+    const classes = (await registrar.get(`/api/classes?sectionId=${ids.turing}&term=1`)).json as Array<{ id: number; subject: { id: number; code: string } }>;
     const target = classes.find((c) => c.subject.code === 'MIL')!;
-    for (const [quarter, grade] of [[1, 70], [2, 72]] as const) {
-      await env.db.quarterlyGrade.create({
-        data: { classId: target.id, enrollmentId: ids.enrollment, subjectId: target.subject.id, semester: 1, quarter, detail: '{}', initialGrade: grade, quarterlyGrade: grade },
-      });
-      await env.db.classQuarter.create({ data: { classId: target.id, quarter, status: 'APPROVED' } });
-    }
-    const list = (await adviser.get(`/api/sections/${ids.turing}/remedial?semester=1`)).json;
+    await env.db.termGrade.create({
+      data: { classId: target.id, enrollmentId: ids.enrollment, subjectId: target.subject.id, term: 1, detail: '{}', initialGrade: 71, termGrade: 71 },
+    });
+    await env.db.classWorkflow.create({ data: { classId: target.id, status: 'APPROVED' } });
+    const list = (await adviser.get(`/api/sections/${ids.turing}/remedial?term=1`)).json;
     expect(list.items).toHaveLength(1);
-    expect(list.items[0]).toMatchObject({ subject: 'Media and Information Literacy', finalGrade: 71, mark: null });
+    expect(list.items[0]).toMatchObject({ subject: 'Media and Information Literacy', termGrade: 71, mark: null });
 
-    expect((await adviser.put(`/api/enrollments/${ids.enrollment}/remedial`, { subjectId: target.subject.id, semester: 1, mark: 101 })).status).toBe(400);
-    expect((await adviser.put(`/api/enrollments/${ids.enrollment}/remedial`, { subjectId: target.subject.id, semester: 1, mark: 80, dateFrom: '2027-04-01', dateTo: '2027-04-30' })).status).toBe(200);
+    expect((await adviser.put(`/api/enrollments/${ids.enrollment}/remedial`, { subjectId: target.subject.id, term: 1, mark: 101 })).status).toBe(400);
+    expect((await adviser.put(`/api/enrollments/${ids.enrollment}/remedial`, { subjectId: target.subject.id, term: 1, mark: 80, dateFrom: '2027-04-01', dateTo: '2027-04-30' })).status).toBe(200);
 
-    const card = (await adviser.get(`/api/enrollments/${ids.enrollment}/card?semester=1&visibility=approved`)).json;
+    const card = (await adviser.get(`/api/enrollments/${ids.enrollment}/card?term=1&visibility=approved`)).json;
     const math = card.subjects.find((s: { code: string }) => s.code === 'MIL');
-    expect(math.finalGrade).toBe(71);
+    expect(math.grade).toBe(71);
     expect(math.remedial).toMatchObject({ mark: 80, recomputed: 76, passed: true });
     expect(math.remark).toBe('PASSED');
 
     // remedial mark that does not rescue the learner
-    await adviser.put(`/api/enrollments/${ids.enrollment}/remedial`, { subjectId: target.subject.id, semester: 1, mark: 70 });
-    const again = (await adviser.get(`/api/enrollments/${ids.enrollment}/card?semester=1&visibility=approved`)).json;
+    await adviser.put(`/api/enrollments/${ids.enrollment}/remedial`, { subjectId: target.subject.id, term: 1, mark: 70 });
+    const again = (await adviser.get(`/api/enrollments/${ids.enrollment}/card?term=1&visibility=approved`)).json;
     expect(again.subjects.find((s: { code: string }) => s.code === 'MIL').remark).toBe('FAILED');
   });
 
@@ -162,7 +160,7 @@ describe('school rules', () => {
     const add = await registrar.post(`/api/learners/${ids.learner}/external-records`, {
       schoolName: 'Sample Integrated School',
       schoolYear: '2025-2026',
-      semester: 2,
+      period: '2nd Semester',
       gradeLevel: 11,
       strandName: 'TVL - ICT',
       sectionName: 'Bonifacio',
@@ -173,7 +171,7 @@ describe('school rules', () => {
       ],
     });
     expect(add.status).toBe(201);
-    expect((await registrar.post(`/api/learners/${ids.learner}/external-records`, { schoolName: 'X', schoolYear: '2025-2026', semester: 3, gradeLevel: 11, subjects: [] })).status).toBe(400);
+    expect((await registrar.post(`/api/learners/${ids.learner}/external-records`, { schoolName: 'X', schoolYear: '2025-2026', period: '', gradeLevel: 11, subjects: [] })).status).toBe(400);
 
     const detail = (await registrar.get(`/api/learners/${ids.learner}`)).json;
     expect(detail.externalRecords).toHaveLength(1);
@@ -228,7 +226,7 @@ describe('school rules', () => {
 
     const me = (await parent.get('/api/me/learner')).json;
     expect(me.lrn).toBe('200000000001');
-    expect((await parent.get(`/api/me/enrollments/${me.enrollments[0].id}/card?semester=1`)).status).toBe(200);
+    expect((await parent.get(`/api/me/enrollments/${me.enrollments[0].id}/card?term=1`)).status).toBe(200);
     expect((await parent.get('/api/learners')).status).toBe(403);
     expect((await parent.get('/api/sections')).status).toBe(403);
     expect((await parent.get(`/api/sections/${ids.turing}`)).status).toBe(403);
@@ -240,8 +238,8 @@ describe('school rules', () => {
     const mk2 = await registrar.post(`/api/learners/${other.learner.id}/parent-account`, { fullName: 'Rosa Ramos' });
     const t2 = await login(env.app, mk2.json.username, mk2.json.tempPassword);
     const c2 = await client(env.app, t2).post('/api/auth/change-password', { currentPassword: mk2.json.tempPassword, newPassword: 'Parent#2027' });
-    expect((await client(env.app, c2.json.token).get(`/api/me/enrollments/${me.enrollments[0].id}/card?semester=1`)).status).toBe(404);
-    expect((await client(env.app, c2.json.token).get(`/api/reports/sf9?enrollmentId=${me.enrollments[0].id}&semester=1`)).status).toBe(404);
+    expect((await client(env.app, c2.json.token).get(`/api/me/enrollments/${me.enrollments[0].id}/card?term=1`)).status).toBe(404);
+    expect((await client(env.app, c2.json.token).get(`/api/reports/sf9?enrollmentId=${me.enrollments[0].id}&term=1`)).status).toBe(404);
 
     // reset: old session dies, new one-time password works, wrong learner is refused
     const detail = (await registrar.get(`/api/learners/${ids.learner}`)).json;

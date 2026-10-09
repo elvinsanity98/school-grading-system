@@ -7,17 +7,22 @@ honors follow **DO 36, s. 2016**. The rules live in `packages/core/src/grading.t
 
 > Check these against the latest DepEd issuance and your division's instructions before the school year starts. The
 > weights are editable in the app; the transmutation table, rounding and honors formula are in code.
+>
+> **Terms.** This system grades in **three terms per school year, with one grade per term** (no quarters, no semester
+> average). DepEd Order 8 describes quarterly grading, so the weights, the transmutation table and the honors formula
+> are kept from it and applied to each term. Confirm with your division office that this matches the issuance your
+> school follows.
 
-## From scores to a quarterly grade
+## From scores to a term grade
 
-For each learner, subject and quarter:
+For each learner, subject and term:
 
 1. **Total Score** of a component = sum of the learner's scores; **Highest Possible Score (HPS)** = sum of the items' HPS.
    Excused items are left out of both. A blank score counts as 0 and is flagged; the record cannot be submitted with blanks.
 2. **Percentage Score (PS)** = Total Score / HPS x 100, rounded to 2 decimals.
 3. **Weighted Score (WS)** = PS x weight of the component, rounded to 2 decimals.
-4. **Initial Grade** = WS(Written Work) + WS(Performance Tasks) + WS(Quarterly Assessment).
-5. **Quarterly Grade** = transmuted Initial Grade.
+4. **Initial Grade** = WS(Written Work) + WS(Performance Tasks) + WS(Term Assessment).
+5. **Term Grade** = transmuted Initial Grade. It is the subject's grade for the term.
 
 Example (core subject, weights 25 / 50 / 25):
 
@@ -25,10 +30,10 @@ Example (core subject, weights 25 / 50 / 25):
 | --- | --- | --- | --- | --- | --- |
 | Written Work | 40 | 50 | 80.00 | 25% | 20.00 |
 | Performance Tasks | 90 | 100 | 90.00 | 50% | 45.00 |
-| Quarterly Assessment | 45 | 60 | 75.00 | 25% | 18.75 |
+| Term Assessment | 45 | 60 | 75.00 | 25% | 18.75 |
 | **Initial Grade** | | | | | **83.75** |
 
-83.75 falls in the band 82.40 to 83.99, so the **Quarterly Grade is 89**.
+83.75 falls in the band 82.40 to 83.99, so the **Term Grade is 89**.
 
 Because PS and WS are rounded to 2 decimals at each step, the numbers on screen add up exactly the way a teacher
 would check them on paper. The official DepEd Excel class record may differ by one point in rare edge cases where it
@@ -36,7 +41,7 @@ carries unrounded values; report any such difference so the rounding rule can be
 
 ## Weights (Senior High School)
 
-| Subjects | Written Work | Performance Tasks | Quarterly Assessment |
+| Subjects | Written Work | Performance Tasks | Term Assessment |
 | --- | --- | --- | --- |
 | Core subjects (all tracks) | 25% | 50% | 25% |
 | Academic track: applied and specialized | 25% | 45% | 30% |
@@ -53,10 +58,10 @@ given a specific row by the administrator.
 
 The full table is shown under Setup, System and backup.
 
-## Semester, general average, remarks
+## General average, remarks
 
-- **Semester final grade** = average of the two quarterly grades of the semester (Q1 and Q2, or Q3 and Q4), rounded half up to a whole number. Both quarters must be approved.
-- **General average** = average of the final grades of all subjects of the semester, each subject counting equally, rounded half up.
+- Each class record is one subject in one term, so the **term grade** is the subject's final grade for that term. There is no averaging across terms.
+- **General average** = average of the term grades of all subjects of the term, each subject counting equally, rounded half up. Every subject of the term must have an approved grade.
 - **Passing grade 75.** Below 75 is *Failed*.
 
 | Grade | Descriptor |
@@ -86,8 +91,8 @@ profile). Conduct is not checked by the system; the adviser confirms it.
 
 ## Forms
 
-- **SF9-SHS (Learner's Progress Report Card):** grades per subject, semester final grade, remarks, general average, attendance per month, observed values (Maka-Diyos, Makatao, Makakalikasan, Makabansa) with AO / SO / RO / NO, descriptors.
-- **SF10-SHS (Learner's Permanent Academic Record):** every approved semester of this school plus encoded records of previous schools, remedial classes, signatories.
+- **SF9-SHS (Learner's Progress Report Card):** grades per subject, term grade, remarks, general average, attendance per month, observed values (Maka-Diyos, Makatao, Makakalikasan, Makabansa) with AO / SO / RO / NO, descriptors.
+- **SF10-SHS (Learner's Permanent Academic Record):** every approved term of this school plus encoded records of previous schools, remedial classes, signatories.
 - Master list (SF1 style), summary of grades, honor roll as Excel.
 
 The PDFs carry the content of the DepEd forms on short bond paper but are not pixel-for-pixel copies of the official

@@ -143,6 +143,6 @@ export function ageOn(birth: string, on: Date): number {
   return age;
 }
 
-export function ordinalSemester(s: number): string {
-  return s === 1 ? '1st Semester' : '2nd Semester';
+export function termLabel(term: number): string {
+  return `Term ${term}`;
 }

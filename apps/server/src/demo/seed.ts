@@ -8,7 +8,7 @@ import type { Db } from '../db';
 import { generateClasses } from '../routes/sections';
 import { createPeriods, seedBaseData } from '../seed-data';
 import { buildCards } from '../services/card';
-import { recomputeClassQuarter } from '../services/grades';
+import { recomputeClass } from '../services/grades';
 
 export const DEMO_PASSWORD = 'Demo#2026';
 
@@ -46,7 +46,7 @@ const SURNAMES = ['Santos', 'Reyes', 'Cruz', 'Bautista', 'Ocampo', 'Garcia', 'Me
 const MIDDLE = ['Dela Cruz', 'Santos', 'Reyes', 'Lopez', 'Perez', 'Gonzales', 'Rodriguez', 'Fernandez', 'Bautista', 'Alvarez'];
 const TEACHERS = ['Elena Marquez', 'Roberto Alcantara', 'Josefina Padilla', 'Antonio Belmonte', 'Cecilia Dumalag', 'Ferdinand Gutierrez', 'Marites Lacson', 'Victor Sumaya'];
 
-/** How far a quarter got in a section. */
+/** How far a term got in a section. */
 type Stage = 'approved' | 'submitted' | 'partial' | 'none';
 
 interface SectionPlan {
@@ -54,16 +54,17 @@ interface SectionPlan {
   strand: string;
   name: string;
   size: number;
-  q1: Stage;
-  q2: Stage;
+  t1: Stage;
+  t2: Stage;
+  t3: Stage;
 }
 
 const PLAN: SectionPlan[] = [
-  { grade: 11, strand: 'STEM', name: 'Newton', size: 16, q1: 'approved', q2: 'approved' }, // finished semester: cards, honors, SF10
-  { grade: 11, strand: 'ABM', name: 'Adam Smith', size: 14, q1: 'approved', q2: 'submitted' }, // waiting in Approvals
-  { grade: 11, strand: 'HUMSS', name: 'Rizal', size: 14, q1: 'approved', q2: 'partial' }, // teachers still encoding
-  { grade: 12, strand: 'STEM', name: 'Curie', size: 12, q1: 'approved', q2: 'approved' },
-  { grade: 12, strand: 'TVL-ICT', name: 'Turing', size: 12, q1: 'submitted', q2: 'none' },
+  { grade: 11, strand: 'STEM', name: 'Newton', size: 16, t1: 'approved', t2: 'approved', t3: 'none' }, // two finished terms: cards, honors, SF10
+  { grade: 11, strand: 'ABM', name: 'Adam Smith', size: 14, t1: 'approved', t2: 'submitted', t3: 'none' }, // waiting in Approvals
+  { grade: 11, strand: 'HUMSS', name: 'Rizal', size: 14, t1: 'approved', t2: 'partial', t3: 'none' }, // teachers still encoding
+  { grade: 12, strand: 'STEM', name: 'Curie', size: 12, t1: 'approved', t2: 'approved', t3: 'none' },
+  { grade: 12, strand: 'TVL-ICT', name: 'Turing', size: 12, t1: 'submitted', t2: 'none', t3: 'none' },
 ];
 
 const ITEM_SPEC: Array<[string, string, number]> = [
@@ -72,7 +73,7 @@ const ITEM_SPEC: Array<[string, string, number]> = [
   ['WW', 'Seatwork', 15],
   ['PT', 'Activity 1', 50],
   ['PT', 'Group project', 100],
-  ['QA', 'Quarterly exam', 50],
+  ['QA', 'Term exam', 50],
 ];
 
 /** Removes everything, children before parents. Used by the demo reset. */
@@ -82,11 +83,11 @@ export async function wipeAllData(db: Db): Promise<void> {
     db.remedial.deleteMany(),
     db.observedValue.deleteMany(),
     db.attendance.deleteMany(),
-    db.quarterlyGrade.deleteMany(),
+    db.termGrade.deleteMany(),
     db.score.deleteMany(),
     db.assessmentItem.deleteMany(),
     db.reopenRequest.deleteMany(),
-    db.classQuarter.deleteMany(),
+    db.classWorkflow.deleteMany(),
     db.classAssignment.deleteMany(),
     db.externalRecord.deleteMany(),
     db.enrollment.deleteMany(),
@@ -124,9 +125,9 @@ export async function seedDemo(db: Db): Promise<DemoSummary> {
     data: { name: '2026-2027', startDate: new Date('2026-06-08T00:00:00Z'), endDate: new Date('2027-03-31T00:00:00Z'), isCurrent: true },
   });
   await createPeriods(db, year.id);
-  // semester 1 is done and released; quarter 2 is still open for the teachers who are not finished
-  await db.gradingPeriod.updateMany({ where: { schoolYearId: year.id, quarter: 1 }, data: { status: 'CLOSED', released: true } });
-  await db.gradingPeriod.updateMany({ where: { schoolYearId: year.id, quarter: 2 }, data: { status: 'OPEN', released: true } });
+  // term 1 is done and released; term 2 is still open for the teachers who are not finished; term 3 has not started
+  await db.gradingPeriod.updateMany({ where: { schoolYearId: year.id, term: 1 }, data: { status: 'CLOSED', released: true } });
+  await db.gradingPeriod.updateMany({ where: { schoolYearId: year.id, term: 2 }, data: { status: 'OPEN', released: true } });
   await db.schoolDays.createMany({
     data: ([[2026, 6, 16], [2026, 7, 23], [2026, 8, 21], [2026, 9, 22], [2026, 10, 22], [2026, 11, 20]] as const).map(([y, m, d]) => ({ schoolYearId: year.id, year: y, month: m, days: d })),
   });
@@ -184,34 +185,37 @@ export async function seedDemo(db: Db): Promise<DemoSummary> {
       ability[0] = 94; // the learner used for the learner and parent logins: a strong student with an honors award
     }
 
-    const classes = await db.classAssignment.findMany({ where: { sectionId: section.id, semester: 1 }, orderBy: { id: 'asc' } });
+    const stageOf = (term: number): Stage => (term === 1 ? plan.t1 : term === 2 ? plan.t2 : plan.t3);
+    const classes = await db.classAssignment.findMany({ where: { sectionId: section.id }, orderBy: [{ term: 'asc' }, { id: 'asc' }] });
+    const indexInTerm = new Map<number, number>();
     for (const [ci, cls] of classes.entries()) {
+      const k = indexInTerm.get(cls.term) ?? 0;
+      indexInTerm.set(cls.term, k + 1);
       await db.classAssignment.update({ where: { id: cls.id }, data: { teacherId: teachers[(si + ci) % teachers.length]!.id } });
 
-      for (const [quarter, stage] of [[1, plan.q1], [2, plan.q2]] as const) {
-        if (stage === 'none') continue;
-        const items = [];
-        for (const [k, [component, title, hps]] of ITEM_SPEC.entries()) {
-          items.push(await db.assessmentItem.create({ data: { classId: cls.id, quarter, component, title, hps, sortOrder: k + 1 } }));
+      const stage = stageOf(cls.term);
+      if (stage === 'none') continue;
+      const items = [];
+      for (const [n, [component, title, hps]] of ITEM_SPEC.entries()) {
+        items.push(await db.assessmentItem.create({ data: { classId: cls.id, component, title, hps, sortOrder: n + 1 } }));
+      }
+      // a term that is only partly encoded has the written work and nothing else
+      const encode = stage === 'partial' ? items.filter((it) => it.component === 'WW') : items;
+      const rows: Array<{ itemId: number; enrollmentId: number; score: number; excused: boolean }> = [];
+      for (const [li, enrollmentId] of enrollmentIds.entries()) {
+        for (const it of encode) {
+          // one learner of 11-Newton does badly in one subject of term 1, so there is a failed subject to show
+          const slump = plan.name === 'Newton' && cls.term === 1 && li === 3 && k === 2 ? 40 : 0;
+          const raw = ability[li]! + (rand() - 0.5) * 16 + (cls.term - 1) * 1.2 - slump;
+          rows.push({ itemId: it.id, enrollmentId, score: Math.max(0, Math.min(it.hps, Math.round((raw / 100) * it.hps))), excused: false });
         }
-        // a quarter that is only partly encoded has the written work and nothing else
-        const encode = stage === 'partial' ? items.filter((it) => it.component === 'WW') : items;
-        const rows: Array<{ itemId: number; enrollmentId: number; score: number; excused: boolean }> = [];
-        for (const [li, enrollmentId] of enrollmentIds.entries()) {
-          for (const it of encode) {
-            // one learner of 11-Newton does badly in one subject, so there is a failed subject to show
-            const slump = plan.name === 'Newton' && li === 3 && ci === 2 ? 40 : 0;
-            const raw = ability[li]! + (rand() - 0.5) * 16 + (quarter === 2 ? 1.5 : 0) - slump;
-            rows.push({ itemId: it.id, enrollmentId, score: Math.max(0, Math.min(it.hps, Math.round((raw / 100) * it.hps))), excused: false });
-          }
-        }
-        await db.score.createMany({ data: rows });
-        await recomputeClassQuarter(db, cls.id, quarter);
-        if (stage === 'approved' || stage === 'submitted') {
-          await db.classQuarter.create({
-            data: { classId: cls.id, quarter, status: stage === 'approved' ? 'APPROVED' : 'SUBMITTED', submittedAt: new Date(), reviewedAt: stage === 'approved' ? new Date() : null },
-          });
-        }
+      }
+      await db.score.createMany({ data: rows });
+      await recomputeClass(db, cls.id);
+      if (stage === 'approved' || stage === 'submitted') {
+        await db.classWorkflow.create({
+          data: { classId: cls.id, status: stage === 'approved' ? 'APPROVED' : 'SUBMITTED', submittedAt: new Date(), reviewedAt: stage === 'approved' ? new Date() : null },
+        });
       }
     }
 
@@ -225,7 +229,7 @@ export async function seedDemo(db: Db): Promise<DemoSummary> {
       });
       await db.observedValue.createMany({
         data: enrollmentIds.flatMap((enrollmentId) =>
-          [1, 2].flatMap((quarter) => ['MD1', 'MD2', 'MT1', 'MT2', 'MK1', 'MB1', 'MB2'].map((valueKey) => ({ enrollmentId, quarter, valueKey, marking: pick(['AO', 'AO', 'AO', 'SO']) }))),
+          [1, 2].flatMap((term) => ['MD1', 'MD2', 'MT1', 'MT2', 'MK1', 'MB1', 'MB2'].map((valueKey) => ({ enrollmentId, term, valueKey, marking: pick(['AO', 'AO', 'AO', 'SO']) }))),
         ),
       });
     }
@@ -234,10 +238,10 @@ export async function seedDemo(db: Db): Promise<DemoSummary> {
   // a learner who failed a subject and took the remedial class
   const cards = await buildCards(db, newtonEnrollmentIds, 1, 'approved');
   for (const card of cards) {
-    const failed = card.subjects.find((s) => s.finalGrade != null && s.finalGrade < 75);
+    const failed = card.subjects.find((s) => s.grade != null && s.grade < 75);
     if (failed) {
       await db.remedial.create({
-        data: { enrollmentId: card.enrollmentId, subjectId: failed.subjectId, semester: 1, mark: 80, dateFrom: new Date('2026-10-26T00:00:00Z'), dateTo: new Date('2026-11-06T00:00:00Z') },
+        data: { enrollmentId: card.enrollmentId, subjectId: failed.subjectId, term: 1, mark: 80, dateFrom: new Date('2026-10-26T00:00:00Z'), dateTo: new Date('2026-11-06T00:00:00Z') },
       });
       break;
     }
@@ -251,7 +255,7 @@ export async function seedDemo(db: Db): Promise<DemoSummary> {
         schoolName: 'Sample Integrated School',
         schoolId: '000000',
         schoolYear: '2025-2026',
-        semester: 2,
+        period: '2nd Semester',
         gradeLevel: 11,
         strandName: 'Science, Technology, Engineering and Mathematics',
         sectionName: 'Galileo',

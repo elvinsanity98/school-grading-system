@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ClipboardCheck, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { QuarterPicker, YearSelect, useYearChoice } from '../components/bits';
+import { TermPicker, YearSelect, useYearChoice } from '../components/bits';
 import { Alert, Badge, Button, Card, CardTitle, Checkbox, Empty, PageHeader, Spinner, StatusBadge, TableWrap, errorMessage, tableCls, tdCls, thCls, useToast } from '../components/ui';
 import { get, post, qs } from '../lib/api';
 import { dateTimeLabel } from '../lib/format';
@@ -11,14 +11,14 @@ import { NoteModal } from './ClassRecord';
 
 export default function ApprovalsPage() {
   const { yearId, setYearId } = useYearChoice();
-  const [quarter, setQuarter] = useState(1);
+  const [term, setTerm] = useState(1);
   const [filter, setFilter] = useState<'SUBMITTED' | 'ALL'>('SUBMITTED');
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [returning, setReturning] = useState<ApprovalRow | null>(null);
   const toast = useToast();
   const qc = useQueryClient();
 
-  const rows = useQuery({ queryKey: ['approvals', yearId, quarter], queryFn: () => get<ApprovalRow[]>(`/approvals${qs({ schoolYearId: yearId, quarter })}`), enabled: yearId != null });
+  const rows = useQuery({ queryKey: ['approvals', yearId, term], queryFn: () => get<ApprovalRow[]>(`/approvals${qs({ schoolYearId: yearId, term })}`), enabled: yearId != null });
   const requests = useQuery({ queryKey: ['reopen-requests'], queryFn: () => get<ReopenRow[]>('/reopen-requests?status=PENDING') });
 
   const refresh = () => {
@@ -30,7 +30,7 @@ export default function ApprovalsPage() {
   };
 
   const bulk = useMutation({
-    mutationFn: (classIds: number[]) => post<{ approved: number; skipped: number[] }>('/approvals/bulk', { quarter, classIds }),
+    mutationFn: (classIds: number[]) => post<{ approved: number; skipped: number[] }>('/approvals/bulk', { classIds }),
     onSuccess: (r) => {
       toast.ok(`${r.approved} class record${r.approved === 1 ? '' : 's'} approved.`);
       setPicked(new Set());
@@ -61,7 +61,7 @@ export default function ApprovalsPage() {
 
   return (
     <>
-      <PageHeader title="Approvals" sub="Review class records that teachers submitted. Approved records are locked and appear on report cards." actions={<><YearSelect value={yearId} onChange={setYearId} /><QuarterPicker value={quarter} onChange={setQuarter} /></>} />
+      <PageHeader title="Approvals" sub="Review class records that teachers submitted. Approved records are locked and appear on report cards." actions={<><YearSelect value={yearId} onChange={setYearId} /><TermPicker value={term} onChange={setTerm} /></>} />
 
       {requests.data && requests.data.length > 0 ? (
         <Card className="mb-4">
@@ -71,7 +71,7 @@ export default function ApprovalsPage() {
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
                   <p className="font-medium">
-                    {r.subject} <span className="font-normal text-muted">· Grade {r.section} · Quarter {r.quarter}</span>
+                    {r.subject} <span className="font-normal text-muted">· Grade {r.section} · Term {r.term}</span>
                   </p>
                   <p className="text-sm text-muted">
                     {r.teacher} · {dateTimeLabel(r.createdAt)}
@@ -116,7 +116,7 @@ export default function ApprovalsPage() {
       ) : shown.length === 0 ? (
         <Card>
           <Empty title="Nothing waiting for approval" icon={<ClipboardCheck className="size-8" />}>
-            When teachers submit their Quarter {quarter} class records they appear here.
+            When teachers submit their Term {term} class records they appear here.
           </Empty>
         </Card>
       ) : (
@@ -137,7 +137,7 @@ export default function ApprovalsPage() {
                 <tr key={r.classId} className="hover:bg-surface-2/60">
                   <td className={tdCls}>{r.status === 'SUBMITTED' ? <input type="checkbox" className="size-4 accent-[var(--brand)]" aria-label={`Select ${r.subject}`} checked={picked.has(r.classId)} onChange={() => toggle(r.classId)} /> : null}</td>
                   <td className={tdCls}>
-                    <Link to={`/classes/${r.classId}?quarter=${quarter}`} className="font-medium hover:text-brand">
+                    <Link to={`/classes/${r.classId}`} className="font-medium hover:text-brand">
                       {r.subject}
                     </Link>
                     <p className="text-xs text-muted">{r.items} items</p>
@@ -154,7 +154,7 @@ export default function ApprovalsPage() {
                   </td>
                   <td className={tdCls + ' text-right'}>
                     <div className="flex justify-end gap-2">
-                      <Link to={`/classes/${r.classId}?quarter=${quarter}`}>
+                      <Link to={`/classes/${r.classId}`}>
                         <Button size="sm">Open</Button>
                       </Link>
                       {r.status === 'SUBMITTED' ? (
@@ -179,7 +179,7 @@ export default function ApprovalsPage() {
         action="Return"
         onClose={() => setReturning(null)}
         onSubmit={async (note) => {
-          await post(`/classes/${returning!.classId}/return`, { quarter, note });
+          await post(`/classes/${returning!.classId}/return`, { note });
           toast.ok('Returned to the teacher.');
           setReturning(null);
           refresh();

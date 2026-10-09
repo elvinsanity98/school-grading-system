@@ -215,7 +215,7 @@ export default function LearnerDetailPage() {
               <div key={r.id} className="rounded-lg border border-line p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium">
-                    {r.schoolName} · SY {r.schoolYear} · Grade {r.gradeLevel}, {r.semester === 1 ? '1st' : '2nd'} semester
+                    {r.schoolName} · SY {r.schoolYear} · Grade {r.gradeLevel}, {r.period}
                   </p>
                   <Button size="sm" variant="ghost" aria-label="Delete record" onClick={() => setRemoveRec(r.id)}>
                     <Trash2 className="size-4" />
@@ -298,7 +298,7 @@ interface SubjRow {
 }
 
 function ExternalModal({ learnerId, onClose, onSaved }: { learnerId: number; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({ schoolName: '', schoolId: '', schoolYear: '', semester: '1', gradeLevel: '11', strandName: '', sectionName: '', generalAverage: '' });
+  const [f, setF] = useState({ schoolName: '', schoolId: '', schoolYear: '', period: '', gradeLevel: '11', strandName: '', sectionName: '', generalAverage: '' });
   const [rows, setRows] = useState<SubjRow[]>([{ subject: '', type: 'Core', q1: '', q2: '', final: '', remarks: 'Passed' }]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -314,7 +314,7 @@ function ExternalModal({ learnerId, onClose, onSaved }: { learnerId: number; onC
         schoolName: f.schoolName,
         schoolId: f.schoolId,
         schoolYear: f.schoolYear,
-        semester: Number(f.semester),
+        period: f.period,
         gradeLevel: Number(f.gradeLevel),
         strandName: f.strandName,
         sectionName: f.sectionName,
@@ -337,7 +337,7 @@ function ExternalModal({ learnerId, onClose, onSaved }: { learnerId: number; onC
           <Field label="School year" hint="e.g. 2025-2026">{(id) => <Input id={id} value={f.schoolYear} onChange={(e) => setF({ ...f, schoolYear: e.target.value })} />}</Field>
           <Field label="School ID">{(id) => <Input id={id} value={f.schoolId} onChange={(e) => setF({ ...f, schoolId: e.target.value })} />}</Field>
           <Field label="Grade level">{(id) => <Select id={id} value={f.gradeLevel} onChange={(e) => setF({ ...f, gradeLevel: e.target.value })}><option value="11">11</option><option value="12">12</option></Select>}</Field>
-          <Field label="Semester">{(id) => <Select id={id} value={f.semester} onChange={(e) => setF({ ...f, semester: e.target.value })}><option value="1">1st</option><option value="2">2nd</option></Select>}</Field>
+          <Field label="Period" hint="as that school named it, e.g. 1st Semester or Term 2">{(id) => <Input id={id} value={f.period} onChange={(e) => setF({ ...f, period: e.target.value })} />}</Field>
           <Field label="Track / strand">{(id) => <Input id={id} value={f.strandName} onChange={(e) => setF({ ...f, strandName: e.target.value })} />}</Field>
           <Field label="Section">{(id) => <Input id={id} value={f.sectionName} onChange={(e) => setF({ ...f, sectionName: e.target.value })} />}</Field>
           <Field label="General average">{(id) => <Input id={id} inputMode="numeric" value={f.generalAverage} onChange={(e) => setF({ ...f, generalAverage: e.target.value.replace(/\D/g, '') })} />}</Field>

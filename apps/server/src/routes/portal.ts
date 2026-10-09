@@ -43,7 +43,7 @@ export default async function portalRoutes(app: FastifyInstance) {
     const id = idParam(req);
     const e = await db.enrollment.findUnique({ where: { id } });
     if (!e || e.learnerId !== user.learnerId) throw notFound('Enrollment');
-    const semester = z.union([z.literal(1), z.literal(2)]).parse(Number((req.query as { semester?: string }).semester ?? 1));
-    return buildCard(db, id, semester, 'released');
+    const term = z.union([z.literal(1), z.literal(2), z.literal(3)]).parse(Number((req.query as { term?: string }).term ?? 1));
+    return buildCard(db, id, term, 'released');
   });
 }

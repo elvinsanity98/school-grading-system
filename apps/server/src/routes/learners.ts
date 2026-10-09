@@ -54,7 +54,7 @@ const externalBody = z.object({
   schoolName: z.string().trim().min(1).max(150),
   schoolId: zNullableText(20),
   schoolYear: z.string().trim().min(4).max(20),
-  semester: z.union([z.literal(1), z.literal(2)]),
+  period: z.string().trim().min(1).max(40),
   gradeLevel: z.union([z.literal(11), z.literal(12)]),
   strandName: zNullableText(100),
   sectionName: zNullableText(60),

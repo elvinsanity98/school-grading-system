@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpenCheck } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { QuarterPills, SemesterPicker, YearSelect, sectionLabel, useSections, useYearChoice } from '../components/bits';
+import { StatusPill, TermPicker, YearSelect, sectionLabel, useSections, useYearChoice } from '../components/bits';
 import { Alert, Card, Checkbox, Empty, PageHeader, Select, Spinner, TableWrap, errorMessage, tableCls, tdCls, thCls, useToast } from '../components/ui';
 import { get, put, qs } from '../lib/api';
 import { useSession, isOfficeRole } from '../lib/auth';
@@ -13,7 +13,7 @@ export default function ClassesPage() {
   const office = isOfficeRole(user.role);
   const { yearId, setYearId } = useYearChoice();
   const [params, setParams] = useSearchParams();
-  const [semester, setSemester] = useState(1);
+  const [term, setTerm] = useState(1);
   const sectionId = params.get('sectionId') ? Number(params.get('sectionId')) : undefined;
   const unassigned = params.get('unassigned') === 'true';
   const toast = useToast();
@@ -22,8 +22,8 @@ export default function ClassesPage() {
   const sections = useSections(office ? yearId : null);
   const teachers = useQuery({ queryKey: ['teachers'], queryFn: () => get<Teacher[]>('/teachers'), enabled: office });
   const classes = useQuery({
-    queryKey: ['classes', yearId, semester, sectionId, unassigned],
-    queryFn: () => get<ClassRow[]>(`/classes${qs({ schoolYearId: yearId, semester, sectionId, unassigned: unassigned || undefined })}`),
+    queryKey: ['classes', yearId, term, sectionId, unassigned],
+    queryFn: () => get<ClassRow[]>(`/classes${qs({ schoolYearId: yearId, term, sectionId, unassigned: unassigned || undefined })}`),
     enabled: yearId != null,
   });
 
@@ -52,7 +52,7 @@ export default function ClassesPage() {
         actions={
           <>
             {office ? <YearSelect value={yearId} onChange={setYearId} /> : null}
-            <SemesterPicker value={semester} onChange={setSemester} />
+            <TermPicker value={term} onChange={setTerm} />
           </>
         }
       />
@@ -78,7 +78,7 @@ export default function ClassesPage() {
       ) : classes.data.length === 0 ? (
         <Card>
           <Empty title={office ? 'No classes found' : 'No classes assigned to you'} icon={<BookOpenCheck className="size-8" />}>
-            {office ? 'Create sections first. Classes are made from the curriculum.' : 'When the registrar gives you a subject and section for this semester it appears here.'}
+            {office ? 'Create sections first. Classes are made from the curriculum.' : 'When the registrar gives you a subject and section for this term it appears here.'}
           </Empty>
         </Card>
       ) : (
@@ -89,14 +89,14 @@ export default function ClassesPage() {
                 <th className={thCls}>Subject</th>
                 <th className={thCls}>Section</th>
                 {office ? <th className={thCls}>Teacher</th> : <th className={thCls + ' text-right'}>Learners</th>}
-                <th className={thCls}>Quarters</th>
+                <th className={thCls}>Status</th>
               </tr>
             </thead>
             <tbody>
               {classes.data.map((c) => (
                 <tr key={c.id} className="hover:bg-surface-2/60">
                   <td className={tdCls}>
-                    <Link to={`/classes/${c.id}?quarter=${semester === 1 ? 1 : 3}`} className="font-medium hover:text-brand">
+                    <Link to={`/classes/${c.id}`} className="font-medium hover:text-brand">
                       {c.subject.name}
                     </Link>
                     <p className="text-xs text-muted">{c.subject.code}</p>
@@ -122,7 +122,7 @@ export default function ClassesPage() {
                     <td className={tdCls + ' text-right tnum'}>{c.section.learners}</td>
                   )}
                   <td className={tdCls}>
-                    <QuarterPills classId={c.id} statuses={c.statuses} semester={c.semester} />
+                    <StatusPill classId={c.id} status={c.status} term={c.term} />
                   </td>
                 </tr>
               ))}

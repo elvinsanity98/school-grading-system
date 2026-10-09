@@ -1,9 +1,9 @@
-import { COMPONENT_LABEL, computeQuarter, quartersOfSemester, type Component, type ItemScore } from '@bnhs/core';
+import { COMPONENT_LABEL, computeTermGrade, type Component, type ItemScore } from '@bnhs/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, CircleAlert, Copy, Download, LayoutGrid, Loader2, Plus, RotateCcw, Send, ShieldCheck, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { GradeChip, QuarterPicker } from '../components/bits';
+import { Link, useNavigate, useParams } from 'react-router';
+import { GradeChip } from '../components/bits';
 import { Alert, Badge, Button, Card, ConfirmDialog, Field, Input, Modal, PageHeader, Segmented, Select, Spinner, StatusBadge, Textarea, cx, errorMessage, useToast } from '../components/ui';
 import { del, downloadReport, get, post, put, qs } from '../lib/api';
 import { isOfficeRole, useSession } from '../lib/auth';
@@ -28,7 +28,7 @@ const serverText = (s: { score: number | null; excused: boolean } | undefined): 
 const keyOf = (itemId: number, enrollmentId: number) => `${itemId}:${enrollmentId}`;
 
 const COMPS: Component[] = ['WW', 'PT', 'QA'];
-const ADD_LABEL: Record<Component, string> = { WW: 'Written Work', PT: 'Performance Task', QA: 'Quarterly Assessment' };
+const ADD_LABEL: Record<Component, string> = { WW: 'Written Work', PT: 'Performance Task', QA: 'Term Assessment' };
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -37,11 +37,9 @@ type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 export default function ClassRecordPage() {
   const { id } = useParams();
   const classId = Number(id);
-  const [params, setParams] = useSearchParams();
-  const quarter = Number(params.get('quarter') ?? 1);
   const q = useQuery({
-    queryKey: ['record', classId, quarter],
-    queryFn: () => get<RecordPayload>(`/classes/${classId}/record?quarter=${quarter}`),
+    queryKey: ['record', classId],
+    queryFn: () => get<RecordPayload>(`/classes/${classId}/record`),
     placeholderData: (prev) => prev,
   });
 
@@ -57,20 +55,19 @@ export default function ClassRecordPage() {
       </>
     );
   }
-  return <RecordEditor key={`${classId}:${quarter}`} data={q.data} setQuarter={(n) => setParams({ quarter: String(n) }, { replace: true })} fetching={q.isFetching} />;
+  return <RecordEditor key={classId} data={q.data} fetching={q.isFetching} />;
 }
 
 // ------------------------------------------------------------------ editor
 
-function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; setQuarter: (n: number) => void; fetching: boolean }) {
+function RecordEditor({ data, fetching }: { data: RecordPayload; fetching: boolean }) {
   const { user, school } = useSession();
   const office = isOfficeRole(user.role);
   const toast = useToast();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const cls = data.class;
-  const quarter = data.quarter;
-  const recordKey = useMemo(() => ['record', cls.id, quarter] as const, [cls.id, quarter]);
+  const recordKey = useMemo(() => ['record', cls.id] as const, [cls.id]);
 
   // ---- local edits (typed but maybe not yet saved)
   const [edits, setEdits] = useState<Map<string, string>>(new Map());
@@ -120,7 +117,7 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
     setSaveState('saving');
     setSaveError(null);
     try {
-      await put(`/classes/${cls.id}/scores`, { quarter, entries });
+      await put(`/classes/${cls.id}/scores`, { entries });
       await qc.refetchQueries({ queryKey: recordKey });
       setEdits((prev) => {
         const next = new Map(prev);
@@ -136,7 +133,7 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
       inFlight.current = false;
       if (pending.current.size && !timer.current) timer.current = window.setTimeout(() => void flush(), 1200);
     }
-  }, [cls.id, itemById, qc, quarter, recordKey]);
+  }, [cls.id, itemById, qc, recordKey]);
 
   const schedule = useCallback(() => {
     setSaveState('dirty');
@@ -174,20 +171,20 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
 
   // ---- live computation (same rules as the server, so the numbers update while typing)
   const live = useMemo(() => {
-    const out = new Map<number, ReturnType<typeof computeQuarter>>();
+    const out = new Map<number, ReturnType<typeof computeTermGrade>>();
     for (const l of learners) {
       const by: Record<Component, ItemScore[]> = { WW: [], PT: [], QA: [] };
       for (const item of data.items) {
         const c = parseCell(textOf(item, l), item.hps);
         by[item.component].push({ hps: item.hps, score: c.kind === 'score' ? c.value : null, excused: c.kind === 'excused' });
       }
-      out.set(l.enrollmentId, computeQuarter({ ww: by.WW, pt: by.PT, qa: by.QA, weights: cls.weights }));
+      out.set(l.enrollmentId, computeTermGrade({ ww: by.WW, pt: by.PT, qa: by.QA, weights: cls.weights }));
     }
     return out;
   }, [learners, data.items, textOf, cls.weights]);
 
   const stats = useMemo(() => {
-    const grades = [...live.values()].map((r) => r.quarterlyGrade).filter((g): g is number => g != null);
+    const grades = [...live.values()].map((r) => r.termGrade).filter((g): g is number => g != null);
     return {
       mean: grades.length ? Math.round((grades.reduce((a, b) => a + b, 0) / grades.length) * 100) / 100 : null,
       failing: grades.filter((g) => g < school.passingGrade).length,
@@ -198,7 +195,6 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
 
   const editable = data.canEdit;
   const status = data.workflow.status;
-  const [qA, qB] = quartersOfSemester(cls.semester);
 
   // ---- item modal
   const [itemModal, setItemModal] = useState<{ mode: 'add'; component: Component } | { mode: 'edit'; item: RecordItem } | null>(null);
@@ -206,6 +202,7 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['record', cls.id] });
@@ -217,7 +214,7 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
   const submit = useMutation({
     mutationFn: async () => {
       await flush();
-      return post(`/classes/${cls.id}/submit`, { quarter });
+      return post(`/classes/${cls.id}/submit`, {});
     },
     onSuccess: () => {
       toast.ok('Submitted for approval.');
@@ -230,23 +227,13 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
     },
   });
   const approve = useMutation({
-    mutationFn: () => post(`/classes/${cls.id}/approve`, { quarter }),
+    mutationFn: () => post(`/classes/${cls.id}/approve`, {}),
     onSuccess: () => {
       toast.ok('Approved and locked.');
       invalidate();
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
-  const copyItems = useMutation({
-    mutationFn: (from: number) => post(`/classes/${cls.id}/copy-items`, { fromQuarter: from, toQuarter: quarter }),
-    onSuccess: () => {
-      toast.ok('Items copied. Enter the scores.');
-      invalidate();
-    },
-    onError: (e) => toast.error(errorMessage(e)),
-  });
-
-  const otherQuarter = quarter === qA ? qB : qA;
   const grouped = COMPS.map((c) => ({ c, items: data.items.filter((i) => i.component === c) }));
   const totalItems = data.items.length;
 
@@ -297,14 +284,13 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
         title={cls.subject.name}
         sub={
           <>
-            Grade {cls.section.gradeLevel} - {cls.section.name} · {cls.section.strand} · {cls.semester === 1 ? '1st' : '2nd'} semester · SY {cls.schoolYear}
+            Grade {cls.section.gradeLevel} - {cls.section.name} · {cls.section.strand} · Term {cls.term} · SY {cls.schoolYear}
             {cls.teacher ? ` · ${cls.teacher.fullName}` : ' · no teacher assigned'}
           </>
         }
         actions={
           <>
-            <QuarterPicker value={quarter} onChange={setQuarter} quarters={[qA, qB]} />
-            <Button size="md" icon={<Download className="size-4" />} onClick={() => downloadReport(`/reports/class-record${qs({ classId: cls.id, quarter })}`, `ClassRecord_${cls.subject.code}_Q${quarter}.xlsx`).catch((e) => toast.error(errorMessage(e)))}>
+            <Button size="md" icon={<Download className="size-4" />} onClick={() => downloadReport(`/reports/class-record${qs({ classId: cls.id })}`, `ClassRecord_${cls.subject.code}_T${cls.term}.xlsx`).catch((e) => toast.error(errorMessage(e)))}>
               Excel
             </Button>
           </>
@@ -378,8 +364,8 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
       {totalItems === 0 ? (
         <Card>
           <div className="flex flex-col items-center gap-3 py-8 text-center">
-            <p className="font-medium">No items in Quarter {quarter} yet</p>
-            <p className="max-w-md text-sm text-muted">Add the quizzes, activities and the exam you gave this quarter, then enter each learner&apos;s score. The grade is computed for you.</p>
+            <p className="font-medium">No items in Term {cls.term} yet</p>
+            <p className="max-w-md text-sm text-muted">Add the quizzes, activities and the exam you gave this term, then enter each learner&apos;s score. The grade is computed for you.</p>
             {editable ? (
               <div className="flex flex-wrap justify-center gap-2">
                 {COMPS.map((c) => (
@@ -387,8 +373,8 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
                     {ADD_LABEL[c]}
                   </Button>
                 ))}
-                <Button icon={<Copy className="size-4" />} loading={copyItems.isPending} onClick={() => copyItems.mutate(otherQuarter)}>
-                  Copy items from Quarter {otherQuarter}
+                <Button icon={<Copy className="size-4" />} onClick={() => setCopyOpen(true)}>
+                  Copy items from another class
                 </Button>
               </div>
             ) : null}
@@ -418,7 +404,7 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
                   Grade
                 </th>
                 <th rowSpan={3} style={{ top: 0, minWidth: 76 }}>
-                  Quarterly
+                  Term
                   <br />
                   Grade
                 </th>
@@ -497,7 +483,7 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
                         })}
                         <td className="tnum" style={{ textAlign: 'center' }}>{r.initialGrade != null ? r.initialGrade.toFixed(2) : ''}</td>
                         <td className="tnum" style={{ textAlign: 'center', fontWeight: 700, background: 'var(--surface-2)' }}>
-                          <GradeChip value={r.quarterlyGrade} passing={school.passingGrade} />
+                          <GradeChip value={r.termGrade} passing={school.passingGrade} />
                         </td>
                       </tr>
                     );
@@ -530,11 +516,12 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
         </p>
       ) : null}
 
-      {itemModal ? <ItemModal state={itemModal} classId={cls.id} quarter={quarter} existing={data.items} canDelete={editable} onClose={() => setItemModal(null)} onSaved={() => { setItemModal(null); invalidate(); }} /> : null}
+      {copyOpen ? <CopyItemsModal classId={cls.id} onClose={() => setCopyOpen(false)} onCopied={() => { setCopyOpen(false); invalidate(); }} /> : null}
+      {itemModal ? <ItemModal state={itemModal} classId={cls.id} term={cls.term} existing={data.items} canDelete={editable} onClose={() => setItemModal(null)} onSaved={() => { setItemModal(null); invalidate(); }} /> : null}
 
       <ConfirmDialog open={confirmSubmit} title="Submit for approval?" confirmLabel="Submit" loading={submit.isPending} onConfirm={() => submit.mutate()} onClose={() => setConfirmSubmit(false)}>
         <p>
-          You are submitting <b>{cls.subject.name}</b>, Quarter {quarter}, for Grade {cls.section.gradeLevel} - {cls.section.name}.
+          You are submitting <b>{cls.subject.name}</b>, Term {cls.term}, for Grade {cls.section.gradeLevel} - {cls.section.name}.
         </p>
         <p className="mt-2 text-muted">After you submit, scores are locked until the registrar approves or returns the record.</p>
         {stats.missing ? <Alert tone="warn" title={`${stats.missing} score${stats.missing === 1 ? ' is' : 's are'} still blank`}>Enter 0 for work that was not handed in, or EX if excused. Blank scores block submission.</Alert> : null}
@@ -547,7 +534,7 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
         action={status === 'APPROVED' ? 'Reopen' : 'Return'}
         onClose={() => setReturnOpen(false)}
         onSubmit={async (note) => {
-          await post(`/classes/${cls.id}/return`, { quarter, note });
+          await post(`/classes/${cls.id}/return`, { note });
           toast.ok(status === 'APPROVED' ? 'Record reopened for the teacher.' : 'Returned to the teacher.');
           setReturnOpen(false);
           invalidate();
@@ -560,7 +547,7 @@ function RecordEditor({ data, setQuarter, fetching }: { data: RecordPayload; set
         action="Send request"
         onClose={() => setReopenOpen(false)}
         onSubmit={async (reason) => {
-          await post(`/classes/${cls.id}/reopen-request`, { quarter, reason });
+          await post(`/classes/${cls.id}/reopen-request`, { reason });
           toast.ok('Request sent to the registrar.');
           setReopenOpen(false);
         }}
@@ -653,7 +640,7 @@ function LearnerView({
   textOf: (item: RecordItem, l: RecordLearner) => string;
   setCell: (item: RecordItem, l: RecordLearner, text: string) => void;
   editable: boolean;
-  result: ReturnType<typeof computeQuarter>;
+  result: ReturnType<typeof computeTermGrade>;
   passing: number;
   onEditItem: (i: RecordItem) => void;
 }) {
@@ -685,9 +672,9 @@ function LearnerView({
             <p className="text-xs text-muted">LRN {l.lrn}</p>
           </div>
           <div className="text-right">
-            <p className="text-xs text-muted">Quarterly grade</p>
+            <p className="text-xs text-muted">Term grade</p>
             <p className="text-3xl font-semibold tnum">
-              <GradeChip value={result.quarterlyGrade} passing={passing} />
+              <GradeChip value={result.termGrade} passing={passing} />
             </p>
             <p className="text-xs text-muted tnum">Initial {result.initialGrade != null ? result.initialGrade.toFixed(2) : '-'}</p>
           </div>
@@ -741,13 +728,13 @@ function LearnerView({
   );
 }
 
-function ItemModal({ state, classId, quarter, existing, canDelete, onClose, onSaved }: { state: { mode: 'add'; component: Component } | { mode: 'edit'; item: RecordItem }; classId: number; quarter: number; existing: RecordItem[]; canDelete: boolean; onClose: () => void; onSaved: () => void }) {
+function ItemModal({ state, classId, term, existing, canDelete, onClose, onSaved }: { state: { mode: 'add'; component: Component } | { mode: 'edit'; item: RecordItem }; classId: number; term: number; existing: RecordItem[]; canDelete: boolean; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const isEdit = state.mode === 'edit';
   const [component, setComponent] = useState<Component>(state.mode === 'add' ? state.component : state.item.component);
   const suggested = useMemo(() => {
     const n = existing.filter((i) => i.component === component).length + 1;
-    return component === 'WW' ? `Quiz ${n}` : component === 'PT' ? `Task ${n}` : n === 1 ? 'Quarterly Exam' : `Quarterly Exam ${n}`;
+    return component === 'WW' ? `Quiz ${n}` : component === 'PT' ? `Task ${n}` : n === 1 ? 'Term Exam' : `Term Exam ${n}`;
   }, [component, existing]);
   const [title, setTitle] = useState(state.mode === 'edit' ? state.item.title : '');
   const [hps, setHps] = useState(state.mode === 'edit' ? String(state.item.hps) : '');
@@ -761,7 +748,7 @@ function ItemModal({ state, classId, quarter, existing, canDelete, onClose, onSa
     setError(null);
     try {
       const body = { title: (title || suggested).trim(), hps: Number(hps), dateGiven: date || null };
-      if (state.mode === 'add') await post(`/classes/${classId}/items`, { ...body, quarter, component });
+      if (state.mode === 'add') await post(`/classes/${classId}/items`, { ...body, component });
       else await put(`/items/${state.item.id}`, body);
       onSaved();
     } catch (e) {
@@ -791,7 +778,7 @@ function ItemModal({ state, classId, quarter, existing, canDelete, onClose, onSa
       <Modal
         open
         onClose={onClose}
-        title={isEdit ? `Edit item` : `Add item to Quarter ${quarter}`}
+        title={isEdit ? `Edit item` : `Add item to Term ${term}`}
         footer={
           <>
             {isEdit && canDelete ? (
@@ -874,6 +861,73 @@ export function NoteModal({ open, title, label, action, onClose, onSubmit }: { o
       }
     >
       <Field label={label}>{(id) => <Textarea id={id} value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} autoFocus />}</Field>
+    </Modal>
+  );
+}
+
+interface CopySource {
+  id: number;
+  subject: string;
+  section: string;
+  term: number;
+  items: number;
+  sameSubject: boolean;
+}
+
+/** Reuse the quizzes, tasks and exams (not the scores) of another class record. */
+function CopyItemsModal({ classId, onClose, onCopied }: { classId: number; onClose: () => void; onCopied: () => void }) {
+  const toast = useToast();
+  const sources = useQuery({ queryKey: ['copy-sources', classId], queryFn: () => get<CopySource[]>(`/classes/${classId}/copy-sources`) });
+  const [from, setFrom] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function copy() {
+    setBusy(true);
+    try {
+      await post(`/classes/${classId}/copy-items`, { fromClassId: Number(from) });
+      toast.ok('Items copied. Enter the scores.');
+      onCopied();
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Copy items from another class"
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!from} loading={busy} onClick={() => void copy()}>
+            Copy
+          </Button>
+        </>
+      }
+    >
+      {sources.isPending ? (
+        <Spinner />
+      ) : sources.isError ? (
+        <Alert tone="bad">{errorMessage(sources.error)}</Alert>
+      ) : sources.data.length === 0 ? (
+        <p className="text-sm text-muted">No other class record has items yet.</p>
+      ) : (
+        <Field label="Copy the items (titles and highest possible scores, no scores) of">
+          {(id) => (
+            <Select id={id} value={from} onChange={(e) => setFrom(e.target.value)}>
+              <option value="">Choose a class</option>
+              {sources.data.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.subject} · Grade {c.section} · Term {c.term} · {c.items} items
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      )}
     </Modal>
   );
 }

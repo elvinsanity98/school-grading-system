@@ -74,7 +74,7 @@ Copy `apps/server/.env.example` to `apps/server/.env`. Everything is optional:
 ## Backups (do this)
 
 - **In the app:** administrator, *System and backup*, *Download backup*. It is a consistent copy of the whole database.
-  Do it after each quarter is approved, and keep copies off the server (flash drive, school head's laptop).
+  Do it after each term is approved, and keep copies off the server (flash drive, school head's laptop).
 - **On the server:** copy the whole `apps/server/data` folder (database plus `jwt.secret`) while the server is stopped, or use the app download while it runs.
 
 **Restore:** stop the server, replace `apps/server/data/bnhs.db` with the backup file (delete `bnhs.db-wal` and
@@ -96,7 +96,7 @@ Setup, School years, *New school year*, then make it current. Create the new sec
 To let people try the system without any real records, run it in **demo mode**. The login page then offers one-click
 sign-in as an administrator, registrar, teacher, adviser, learner or parent, a banner lets visitors switch role or reset
 the data, and everything wipes itself and reloads every few hours. The fake school has 68 learners in 5 sections: a
-finished semester with report cards, honors and a remedial class, an approvals queue, and a class still being encoded.
+two finished terms with report cards, honors and a remedial class, an approvals queue, and a class still being encoded.
 
 **On Render, in a few clicks:** Render dashboard, **New**, **Blueprint**, pick this repository, **Apply**. It reads
 `render.yaml` and creates `bnhs-grades-demo` on the free plan with no database and no secrets to enter. The web address

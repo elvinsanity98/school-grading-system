@@ -41,7 +41,7 @@ const weightBody = z.object({
 const curriculumBody = z.object({
   strandId: z.number().int().positive().nullable(),
   gradeLevel: z.union([z.literal(11), z.literal(12)]),
-  semester: z.union([z.literal(1), z.literal(2)]),
+  term: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   subjectId: z.number().int().positive(),
   sortOrder: z.number().int().min(0).max(999).default(0),
 });
@@ -136,18 +136,18 @@ export default async function catalogRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  // ---- curriculum: which subject is taken by which strand, grade level and semester
+  // ---- curriculum: which subject is taken by which strand, grade level and term
 
   app.get('/curriculum', async (req) => {
     const q = req.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = {};
     if (q.gradeLevel) where.gradeLevel = Number(q.gradeLevel);
-    if (q.semester) where.semester = Number(q.semester);
+    if (q.term) where.term = Number(q.term);
     if (q.strandId) where.OR = [{ strandId: Number(q.strandId) }, { strandId: null }];
     return db.curriculumSubject.findMany({
       where,
       include: { subject: true, strand: true },
-      orderBy: [{ gradeLevel: 'asc' }, { semester: 'asc' }, { sortOrder: 'asc' }],
+      orderBy: [{ gradeLevel: 'asc' }, { term: 'asc' }, { sortOrder: 'asc' }],
     });
   });
 
@@ -155,7 +155,7 @@ export default async function catalogRoutes(app: FastifyInstance) {
     const body = parse(curriculumBody, req.body);
     if (!(await db.subject.findUnique({ where: { id: body.subjectId } }))) throw notFound('Subject');
     const dup = await db.curriculumSubject.findFirst({
-      where: { strandId: body.strandId, gradeLevel: body.gradeLevel, semester: body.semester, subjectId: body.subjectId },
+      where: { strandId: body.strandId, gradeLevel: body.gradeLevel, term: body.term, subjectId: body.subjectId },
     });
     if (dup) throw conflict('That subject is already in this curriculum slot.');
     const row = await db.curriculumSubject.create({ data: body });

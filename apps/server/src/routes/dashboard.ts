@@ -1,4 +1,4 @@
-import { descriptorFor, semesterOfQuarter, DESCRIPTORS } from '@bnhs/core';
+import { descriptorFor, DESCRIPTORS } from '@bnhs/core';
 import type { FastifyInstance } from 'fastify';
 import { isFamily, isOffice, me } from '../auth';
 import { forbidden } from '../errors';
@@ -14,10 +14,10 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       : db.schoolYear.findFirst({ where: { isCurrent: true }, include: { periods: true } });
   }
 
-  /** The quarter being worked on now: the first open one, else the first. */
-  function defaultQuarter(periods: Array<{ quarter: number; status: string }>, raw?: string): number {
-    if (raw && Number(raw) >= 1 && Number(raw) <= 4) return Number(raw);
-    return periods.filter((p) => p.status === 'OPEN').sort((a, b) => a.quarter - b.quarter)[0]?.quarter ?? 1;
+  /** The term being worked on now: the first open one, else the first. */
+  function defaultTerm(periods: Array<{ term: number; status: string }>, raw?: string): number {
+    if (raw && Number(raw) >= 1 && Number(raw) <= 3) return Number(raw);
+    return periods.filter((p) => p.status === 'OPEN').sort((a, b) => a.term - b.term)[0]?.term ?? 1;
   }
 
   app.get('/dashboard', async (req) => {
@@ -27,8 +27,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     const year = await pickYear(q.schoolYearId);
     if (!year) return { kind: user.role === 'TEACHER' ? ('teacher' as const) : ('office' as const), year: null };
-    const quarter = defaultQuarter(year.periods, q.quarter);
-    const semester = semesterOfQuarter(quarter);
+    const term = defaultTerm(year.periods, q.term);
 
     // ---------------------------------------------------------- teacher
     if (user.role === 'TEACHER') {
@@ -38,9 +37,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           include: {
             subject: true,
             section: { include: { strand: true, _count: { select: { enrollments: true } } } },
-            quarters: true,
+            workflow: true,
           },
-          orderBy: [{ semester: 'asc' }, { section: { gradeLevel: 'asc' } }, { section: { name: 'asc' } }],
+          orderBy: [{ term: 'asc' }, { section: { gradeLevel: 'asc' } }, { section: { name: 'asc' } }],
         }),
         db.section.findMany({
           where: { adviserId: user.id, schoolYearId: year.id },
@@ -51,15 +50,15 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       return {
         kind: 'teacher' as const,
         year: { id: year.id, name: year.name },
-        quarter,
+        term,
         classes: classes.map((c) => ({
           id: c.id,
-          semester: c.semester,
+          term: c.term,
           subject: c.subject.name,
           section: `${c.section.gradeLevel} - ${c.section.name}`,
           strand: c.section.strand.code,
           learners: c.section._count.enrollments,
-          statuses: [1, 2, 3, 4].map((n) => ({ quarter: n, status: c.quarters.find((x) => x.quarter === n)?.status ?? 'DRAFT' })),
+          status: c.workflow?.status ?? 'DRAFT',
         })),
         advisory: advisory.map((s) => ({
           id: s.id,
@@ -68,7 +67,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           strand: s.strand.code,
           learners: s._count.enrollments,
         })),
-        openQuarters: year.periods.filter((p) => p.status === 'OPEN').map((p) => p.quarter),
+        openTerms: year.periods.filter((p) => p.status === 'OPEN').map((p) => p.term),
         pendingRequests,
       };
     }
@@ -76,33 +75,33 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     // ---------------------------------------------------------- office (admin / registrar)
     if (!isOffice(user)) throw forbidden();
 
-    const [enrolled, sections, teachers, classes, unassigned, pendingReopen, statusRows, byStrand, gradeRows] = await Promise.all([
+    const [enrolled, sections, teachers, classes, unassigned, pendingReopen, workflowRows, byStrand, gradeRows, classesByTerm] = await Promise.all([
       db.enrollment.count({ where: { schoolYearId: year.id, status: { in: ['ENROLLED', 'LATE_ENROLLEE'] } } }),
       db.section.count({ where: { schoolYearId: year.id } }),
       db.user.count({ where: { role: 'TEACHER', active: true } }),
-      db.classAssignment.count({ where: { schoolYearId: year.id, semester } }),
-      db.classAssignment.count({ where: { schoolYearId: year.id, semester, teacherId: null } }),
+      db.classAssignment.count({ where: { schoolYearId: year.id, term } }),
+      db.classAssignment.count({ where: { schoolYearId: year.id, term, teacherId: null } }),
       db.reopenRequest.count({ where: { status: 'PENDING' } }),
-      db.classQuarter.findMany({ where: { class: { schoolYearId: year.id } }, select: { classId: true, quarter: true, status: true } }),
+      db.classWorkflow.findMany({ where: { class: { schoolYearId: year.id } }, select: { status: true, class: { select: { term: true } } } }),
       db.enrollment.findMany({
         where: { schoolYearId: year.id, status: { in: ['ENROLLED', 'LATE_ENROLLEE'] } },
         select: { section: { select: { gradeLevel: true, strand: { select: { code: true } } } } },
       }),
-      db.quarterlyGrade.findMany({
-        where: { quarter, quarterlyGrade: { not: null }, class: { schoolYearId: year.id } },
-        select: { quarterlyGrade: true, enrollmentId: true },
+      db.termGrade.findMany({
+        where: { term, termGrade: { not: null }, class: { schoolYearId: year.id } },
+        select: { termGrade: true, enrollmentId: true },
       }),
+      db.classAssignment.groupBy({ by: ['term'], where: { schoolYearId: year.id }, _count: true }),
     ]);
 
-    // Progress of the class records for every quarter of the year.
-    const classesBySemester = await db.classAssignment.groupBy({ by: ['semester'], where: { schoolYearId: year.id }, _count: true });
-    const progress = [1, 2, 3, 4].map((n) => {
-      const total = classesBySemester.find((c) => c.semester === semesterOfQuarter(n))?._count ?? 0;
-      const rows = statusRows.filter((r) => r.quarter === n);
+    // Progress of the class records for every term of the year.
+    const progress = [1, 2, 3].map((n) => {
+      const total = classesByTerm.find((c) => c.term === n)?._count ?? 0;
+      const rows = workflowRows.filter((r) => r.class.term === n);
       const count = (s: string) => rows.filter((r) => r.status === s).length;
-      const period = year.periods.find((p) => p.quarter === n);
+      const period = year.periods.find((p) => p.term === n);
       return {
-        quarter: n,
+        term: n,
         total,
         submitted: count('SUBMITTED'),
         approved: count('APPROVED'),
@@ -123,15 +122,14 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       label: d.label,
       min: d.min,
       max: d.max,
-      count: gradeRows.filter((g) => descriptorFor(g.quarterlyGrade) === d.label).length,
+      count: gradeRows.filter((g) => descriptorFor(g.termGrade) === d.label).length,
     }));
-    const failingEnrollments = new Set(gradeRows.filter((g) => (g.quarterlyGrade ?? 100) < 75).map((g) => g.enrollmentId));
+    const failingEnrollments = new Set(gradeRows.filter((g) => (g.termGrade ?? 100) < 75).map((g) => g.enrollmentId));
 
     return {
       kind: 'office' as const,
       year: { id: year.id, name: year.name },
-      quarter,
-      semester,
+      term,
       counts: { enrolled, sections, teachers, classes, unassignedClasses: unassigned },
       enrollment: [...strandCounts.entries()]
         .map(([key, count]) => {
@@ -149,7 +147,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Learners with a quarterly grade below the passing grade, so advisers and teachers
+   * Learners with a term grade below the passing grade, so advisers and teachers
    * can act early. Office sees a chosen section; teachers see their own classes.
    */
   app.get('/at-risk', async (req) => {
@@ -158,20 +156,18 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const q = req.query as Record<string, string | undefined>;
     const year = await pickYear(q.schoolYearId);
     if (!year) return [];
-    const quarter = defaultQuarter(year.periods, q.quarter);
+    const term = defaultTerm(year.periods, q.term);
     const school = await db.school.findUnique({ where: { id: 1 } });
     const passing = school?.passingGrade ?? 75;
 
     let classFilter: Record<string, unknown> = { schoolYearId: year.id };
     if (q.sectionId) classFilter = { ...classFilter, sectionId: Number(q.sectionId) };
     if (user.role === 'TEACHER') {
-      const advises = q.sectionId
-        ? await db.section.count({ where: { id: Number(q.sectionId), adviserId: user.id } })
-        : 0;
+      const advises = q.sectionId ? await db.section.count({ where: { id: Number(q.sectionId), adviserId: user.id } }) : 0;
       if (!advises) classFilter = { ...classFilter, teacherId: user.id };
     }
-    const rows = await db.quarterlyGrade.findMany({
-      where: { quarter, quarterlyGrade: { lt: passing }, class: classFilter },
+    const rows = await db.termGrade.findMany({
+      where: { term, termGrade: { lt: passing }, class: classFilter },
       include: {
         class: { include: { subject: true, section: true } },
         enrollment: { include: { learner: true } },
@@ -184,11 +180,11 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         section: `${r.class.section.gradeLevel} - ${r.class.section.name}`,
         subjects: [],
       };
-      entry.subjects.push({ subject: r.class.subject.name, grade: r.quarterlyGrade! });
+      entry.subjects.push({ subject: r.class.subject.name, grade: r.termGrade! });
       byLearner.set(r.enrollmentId, entry);
     }
     return {
-      quarter,
+      term,
       passing,
       learners: [...byLearner.entries()]
         .map(([enrollmentId, v]) => ({ enrollmentId, ...v }))

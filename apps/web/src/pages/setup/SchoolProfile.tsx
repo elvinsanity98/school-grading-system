@@ -105,7 +105,7 @@ export default function SchoolProfilePage() {
             {numberField('With Highest Honors from', 'honorsHighest')}
             {numberField('No subject below', 'honorsMinSubject', 'to receive honors')}
           </div>
-          <p className="mt-3 text-xs text-muted">Component weights (Written Work, Performance Tasks, Quarterly Assessment) are under Curriculum, Weights.</p>
+          <p className="mt-3 text-xs text-muted">Component weights (Written Work, Performance Tasks, Term Assessment) are under Curriculum, Weights.</p>
         </Card>
       </div>
     </>

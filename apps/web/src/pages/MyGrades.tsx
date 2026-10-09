@@ -2,7 +2,7 @@ import { DESCRIPTORS, HONORS_LABEL, MONTH_NAME, descriptorFor } from '@bnhs/core
 import { useQuery } from '@tanstack/react-query';
 import { Award, FileText, Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { GradeChip, SemesterPicker } from '../components/bits';
+import { GradeChip, TermPicker } from '../components/bits';
 import { Alert, Badge, Button, Card, CardTitle, Empty, PageHeader, Select, Spinner, TableWrap, errorMessage, tableCls, tdCls, thCls, useToast } from '../components/ui';
 import { downloadReport, get, qs } from '../lib/api';
 import { useSession } from '../lib/auth';
@@ -19,15 +19,15 @@ export default function MyGradesPage() {
   const toast = useToast();
   const me = useQuery({ queryKey: ['me-learner'], queryFn: () => get<Me>('/me/learner') });
   const [enrollmentId, setEnrollmentId] = useState<number | null>(null);
-  const [semester, setSemester] = useState(1);
+  const [term, setTerm] = useState(1);
 
   useEffect(() => {
     if (me.data && enrollmentId == null && me.data.enrollments[0]) setEnrollmentId(me.data.enrollments[0].id);
   }, [me.data, enrollmentId]);
 
   const card = useQuery({
-    queryKey: ['me-card', enrollmentId, semester],
-    queryFn: () => get<GradeCard>(`/me/enrollments/${enrollmentId}/card?semester=${semester}`),
+    queryKey: ['me-card', enrollmentId, term],
+    queryFn: () => get<GradeCard>(`/me/enrollments/${enrollmentId}/card?term=${term}`),
     enabled: enrollmentId != null,
   });
 
@@ -43,7 +43,7 @@ export default function MyGradesPage() {
     );
   }
   const c = card.data;
-  const anyGrade = c?.subjects.some((s) => s.quarters.some((q) => q.grade != null));
+  const anyGrade = c?.subjects.some((s) => s.grade != null);
 
   return (
     <>
@@ -57,7 +57,7 @@ export default function MyGradesPage() {
                 {l.enrollments.map((e) => <option key={e.id} value={e.id}>SY {e.schoolYear}: Grade {e.gradeLevel}</option>)}
               </Select>
             ) : null}
-            <SemesterPicker value={semester} onChange={setSemester} />
+            <TermPicker value={term} onChange={setTerm} />
           </>
         }
       />
@@ -72,10 +72,10 @@ export default function MyGradesPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm text-muted">Grade {c.section.gradeLevel} - {c.section.name} · {c.section.strandName}</p>
-                <p className="text-sm text-muted">SY {c.schoolYear.name} · {semester === 1 ? '1st' : '2nd'} semester · Adviser: {c.section.adviser ?? '-'}</p>
+                <p className="text-sm text-muted">SY {c.schoolYear.name} · Term {term} · Adviser: {c.section.adviser ?? '-'}</p>
               </div>
               {anyGrade ? (
-                <Button icon={<FileText className="size-4" />} onClick={() => downloadReport(`/reports/sf9${qs({ enrollmentId, semester })}`, `ReportCard_Sem${semester}.pdf`).catch((e) => toast.error(errorMessage(e)))}>
+                <Button icon={<FileText className="size-4" />} onClick={() => downloadReport(`/reports/sf9${qs({ enrollmentId, term })}`, `ReportCard_Term${term}.pdf`).catch((e) => toast.error(errorMessage(e)))}>
                   Download report card (PDF)
                 </Button>
               ) : null}
@@ -83,18 +83,16 @@ export default function MyGradesPage() {
           </Card>
 
           {!anyGrade ? (
-            <Card><Empty title="No grades released yet" icon={<Lock className="size-8" />}>Grades appear here after your teachers submit them, the registrar approves them and the school releases the quarter.</Empty></Card>
+            <Card><Empty title="No grades released yet" icon={<Lock className="size-8" />}>Grades appear here after your teachers submit them, the registrar approves them and the school releases the term.</Empty></Card>
           ) : (
             <>
-              {c.hasHidden ? <Alert tone="info">Some quarters are not released yet. They will appear here when the school releases them.</Alert> : null}
+              {c.hasHidden ? <Alert tone="info">Some grades are not released yet. They will appear here when the school releases the term.</Alert> : null}
               <TableWrap>
                 <table className={tableCls}>
                   <thead>
                     <tr>
                       <th className={thCls}>Subject</th>
-                      <th className={thCls + ' text-center'}>Quarter {c.quarters[0]}</th>
-                      <th className={thCls + ' text-center'}>Quarter {c.quarters[1]}</th>
-                      <th className={thCls + ' text-center'}>Final</th>
+                      <th className={thCls + ' text-center'}>Term {c.term} grade</th>
                       <th className={thCls}>Remarks</th>
                     </tr>
                   </thead>
@@ -102,21 +100,19 @@ export default function MyGradesPage() {
                     {c.subjects.map((s) => (
                       <tr key={s.classId}>
                         <td className={tdCls + ' font-medium'}>{s.name}</td>
-                        <td className={tdCls + ' text-center'}><GradeChip value={s.quarters[0]!.grade} passing={school.passingGrade} /></td>
-                        <td className={tdCls + ' text-center'}><GradeChip value={s.quarters[1]!.grade} passing={school.passingGrade} /></td>
-                        <td className={tdCls + ' text-center text-base'}><GradeChip value={s.finalGrade} passing={school.passingGrade} /></td>
+                        <td className={tdCls + ' text-center text-base'}><GradeChip value={s.grade} passing={school.passingGrade} /></td>
                         <td className={tdCls}>
-                          {s.finalGrade != null ? (
+                          {s.grade != null ? (
                             <span className="inline-flex items-center gap-2">
                               {s.remark === 'PASSED' ? <Badge tone="ok">Passed</Badge> : <Badge tone="bad">Failed</Badge>}
-                              <span className="text-xs text-muted">{descriptorFor(s.finalGrade)}</span>
+                              <span className="text-xs text-muted">{descriptorFor(s.grade)}</span>
                             </span>
                           ) : null}
                         </td>
                       </tr>
                     ))}
                     <tr className="bg-surface-2">
-                      <td className={tdCls + ' font-semibold'} colSpan={3}>General average for the semester</td>
+                      <td className={tdCls + ' font-semibold'} colSpan={1}>General average for the term</td>
                       <td className={tdCls + ' text-center text-lg font-semibold'}><GradeChip value={c.generalAverage} passing={school.passingGrade} /></td>
                       <td className={tdCls}>{c.honors ? <Badge tone="brand"><Award className="size-3" />{HONORS_LABEL[c.honors]}</Badge> : null}</td>
                     </tr>

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, BookOpenCheck, CheckCircle2, Circle, ClipboardCheck, Lock, LockOpen, Send, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Link, Navigate } from 'react-router';
-import { QuarterPicker, QuarterPills } from '../components/bits';
+import { StatusPill, TermPicker } from '../components/bits';
 import { Alert, Badge, Button, Card, CardTitle, Empty, PageHeader, Progress, Spinner, Stat, cx, errorMessage, useToast } from '../components/ui';
 import { get, put, qs } from '../lib/api';
 import { useSession } from '../lib/auth';
@@ -21,8 +21,8 @@ function OfficeDashboard() {
   const { years, currentYearId, user, school } = useSession();
   const qc = useQueryClient();
   const toast = useToast();
-  const [quarter, setQuarter] = useState<number | null>(null);
-  const q = useQuery({ queryKey: ['dashboard', quarter], queryFn: () => get<DashboardData>(`/dashboard${qs({ quarter })}`) });
+  const [term, setTerm] = useState<number | null>(null);
+  const q = useQuery({ queryKey: ['dashboard', term], queryFn: () => get<DashboardData>(`/dashboard${qs({ term })}`) });
 
   const period = useMutation({
     mutationFn: (v: { id: number; status?: 'OPEN' | 'CLOSED'; released?: boolean }) => put(`/periods/${v.id}`, { status: v.status, released: v.released }),
@@ -50,14 +50,14 @@ function OfficeDashboard() {
   }
 
   const year = years.find((y) => y.id === (d.year?.id ?? currentYearId));
-  const active = quarter ?? d.quarter;
+  const active = term ?? d.term;
   const anyOpen = Boolean(year?.periods.some((p) => p.status === 'OPEN'));
-  const activeProgress = d.progress.find((p) => p.quarter === active);
+  const activeProgress = d.progress.find((p) => p.term === active);
   const maxBand = Math.max(1, ...d.distribution.map((x) => x.count));
 
   return (
     <>
-      <PageHeader title="Dashboard" sub={`School year ${d.year.name}`} actions={<QuarterPicker value={active} onChange={setQuarter} />} />
+      <PageHeader title="Dashboard" sub={`School year ${d.year.name}`} actions={<TermPicker value={active} onChange={setTerm} />} />
 
       <GettingStarted
         admin={user.role === 'ADMIN'}
@@ -67,7 +67,7 @@ function OfficeDashboard() {
           { done: d.counts.teachers > 0, label: 'Add the teachers', hint: 'Each gets a username and a one-time password.', to: '/setup/users', adminOnly: true },
           { done: d.counts.sections > 0, label: 'Create the sections', hint: 'Class records are created from the curriculum, then assign a teacher to each.', to: '/sections' },
           { done: d.counts.enrolled > 0, label: 'Enroll the learners', hint: 'Import a class list or add learners one by one.', to: '/learners' },
-          { done: anyOpen, label: 'Open Quarter 1 for encoding', hint: 'Teachers can enter scores only while a quarter is open.', to: '/setup/years' },
+          { done: anyOpen, label: 'Open Term 1 for encoding', hint: 'Teachers can enter scores only while a term is open.', to: '/setup/years' },
         ]}
       />
 
@@ -92,15 +92,15 @@ function OfficeDashboard() {
 
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">
-          <CardTitle sub="Class records per quarter">Grading progress</CardTitle>
+          <CardTitle sub="Class records per term">Grading progress</CardTitle>
           <div className="flex flex-col gap-4">
             {d.progress.map((p) => {
-              const per = year?.periods.find((x) => x.quarter === p.quarter);
+              const per = year?.periods.find((x) => x.term === p.term);
               return (
-                <div key={p.quarter} className={cx('rounded-lg p-3', p.quarter === active && 'bg-surface-2')}>
+                <div key={p.term} className={cx('rounded-lg p-3', p.term === active && 'bg-surface-2')}>
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold">Quarter {p.quarter}</span>
+                      <span className="font-semibold">Term {p.term}</span>
                       <Badge tone={p.periodStatus === 'OPEN' ? 'ok' : 'neutral'}>{p.periodStatus === 'OPEN' ? 'Open for encoding' : 'Closed'}</Badge>
                       {p.released ? <Badge tone="brand">Released to learners</Badge> : null}
                     </div>
@@ -134,9 +134,9 @@ function OfficeDashboard() {
 
         <div className="flex flex-col gap-4 lg:col-span-2">
           <Card>
-            <CardTitle sub={`Quarter ${active}, all recorded grades`}>Grade distribution</CardTitle>
+            <CardTitle sub={`Term ${active}, all recorded grades`}>Grade distribution</CardTitle>
             {d.gradesRecorded === 0 ? (
-              <p className="py-4 text-sm text-muted">No quarterly grades computed yet.</p>
+              <p className="py-4 text-sm text-muted">No term grades computed yet.</p>
             ) : (
               <div className="flex flex-col gap-2.5">
                 {d.distribution.map((b, i) => (
@@ -231,7 +231,7 @@ function AtRiskCard({ sectionId }: { sectionId?: number }) {
   if (q.isError || !q.data.learners.length) return null;
   return (
     <Card className="mt-4">
-      <CardTitle sub={`Quarter ${q.data.quarter}: grade below ${q.data.passing}`}>Learners who need help</CardTitle>
+      <CardTitle sub={`Term ${q.data.term}: grade below ${q.data.passing}`}>Learners who need help</CardTitle>
       <ul className="divide-y divide-line">
         {q.data.learners.slice(0, 12).map((l) => (
           <li key={l.enrollmentId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
@@ -267,20 +267,20 @@ function TeacherDashboard() {
       </>
     );
   }
-  const todo = d.classes.filter((c) => c.statuses.some((s) => d.openQuarters.includes(s.quarter) && (s.status === 'DRAFT' || s.status === 'RETURNED')));
+  const todo = d.classes.filter((c) => d.openTerms.includes(c.term) && (c.status === 'DRAFT' || c.status === 'RETURNED'));
 
   return (
     <>
       <PageHeader title="Dashboard" sub={`School year ${d.year.name}`} />
       <div className="mb-4 flex flex-col gap-2">
-        {d.openQuarters.length ? (
-          <Alert tone="info" title={`Quarter ${d.openQuarters.join(' and ')} ${d.openQuarters.length > 1 ? 'are' : 'is'} open for encoding`}>
+        {d.openTerms.length ? (
+          <Alert tone="info" title={`Term ${d.openTerms.join(' and ')} ${d.openTerms.length > 1 ? 'are' : 'is'} open for encoding`}>
             {todo.length ? `${todo.length} of your class records still need scores or a submission.` : 'All your open class records are submitted.'}
           </Alert>
         ) : (
-          <Alert tone="warn" title="No quarter is open for encoding right now">You can look at your records, but scores cannot be changed until the registrar opens a quarter.</Alert>
+          <Alert tone="warn" title="No term is open for encoding right now">You can look at your records, but scores cannot be changed until the registrar opens a term.</Alert>
         )}
-        {d.classes.some((c) => c.statuses.some((s) => s.status === 'RETURNED')) ? (
+        {d.classes.some((c) => c.status === 'RETURNED') ? (
           <Alert tone="warn" title="A class record was returned to you">Open the record marked Returned, read the note and fix it.</Alert>
         ) : null}
       </div>
@@ -296,13 +296,13 @@ function TeacherDashboard() {
             <ul className="divide-y divide-line">
               {d.classes.map((c) => (
                 <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                  <Link to={`/classes/${c.id}?quarter=${d.openQuarters.find((oq) => (oq <= 2 ? 1 : 2) === c.semester) ?? (c.semester === 1 ? 1 : 3)}`} className="min-w-0">
+                  <Link to={`/classes/${c.id}`} className="min-w-0">
                     <p className="truncate font-medium hover:text-brand">{c.subject}</p>
                     <p className="text-xs text-muted">
-                      Grade {c.section} · {c.strand} · {c.learners} learners · Sem {c.semester}
+                      Grade {c.section} · {c.strand} · {c.learners} learners · Term {c.term}
                     </p>
                   </Link>
-                  <QuarterPills classId={c.id} statuses={c.statuses} semester={c.semester} />
+                  <StatusPill classId={c.id} status={c.status} term={c.term} />
                 </li>
               ))}
             </ul>

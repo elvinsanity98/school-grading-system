@@ -6,7 +6,7 @@ import { audit } from '../audit';
 import { requireRole } from '../auth';
 import { dataDir, dbFile, describeDatabase } from '../config';
 import { dbKind } from '../db';
-import { recomputeClassQuarter } from '../services/grades';
+import { recomputeClass } from '../services/grades';
 
 export default async function adminRoutes(app: FastifyInstance) {
   const db = app.db;
@@ -57,24 +57,16 @@ export default async function adminRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Recomputes every stored quarterly grade that is not approved yet.
+   * Recomputes every stored term grade that is not approved yet.
    * Use after changing the weights so open class records pick up the new percentages.
    */
   app.post('/admin/recompute', { preHandler: admin }, async (req) => {
-    const pairs = await db.assessmentItem.findMany({
-      select: { classId: true, quarter: true },
-      distinct: ['classId', 'quarter'],
-    });
-    const approved = await db.classQuarter.findMany({ where: { status: 'APPROVED' }, select: { classId: true, quarter: true } });
-    const locked = new Set(approved.map((a) => `${a.classId}:${a.quarter}`));
-    let done = 0;
-    for (const p of pairs) {
-      if (locked.has(`${p.classId}:${p.quarter}`)) continue;
-      await recomputeClassQuarter(db, p.classId, p.quarter);
-      done++;
-    }
-    await audit(db, req, 'RECOMPUTE_ALL', 'System', undefined, { recomputed: done, lockedSkipped: pairs.length - done });
-    return { recomputed: done, lockedSkipped: pairs.length - done };
+    const classes = await db.classAssignment.findMany({ select: { id: true, workflow: { select: { status: true } } } });
+    const open = classes.filter((c) => c.workflow?.status !== 'APPROVED');
+    for (const c of open) await recomputeClass(db, c.id);
+    const lockedSkipped = classes.length - open.length;
+    await audit(db, req, 'RECOMPUTE_ALL', 'System', undefined, { recomputed: open.length, lockedSkipped });
+    return { recomputed: open.length, lockedSkipped };
   });
 
   app.get('/admin/system', { preHandler: admin }, async () => {

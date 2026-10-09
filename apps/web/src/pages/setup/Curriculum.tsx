@@ -12,7 +12,7 @@ export default function CurriculumPage() {
   const [tab, setTab] = useState<Tab>('curriculum');
   return (
     <>
-      <PageHeader title="Curriculum" sub="Strands, subjects, the subjects each strand takes per semester, and the grading weights." />
+      <PageHeader title="Curriculum" sub="Strands, subjects, the subjects each strand takes per term, and the grading weights." />
       <Tabs
         className="mb-4"
         value={tab}
@@ -41,12 +41,12 @@ function ProgramTab() {
   const subjects = useQuery({ queryKey: ['subjects'], queryFn: () => get<Subject[]>('/subjects') });
   const [strandId, setStrandId] = useState('');
   const [grade, setGrade] = useState('11');
-  const [semester, setSemester] = useState('1');
+  const [term, setTerm] = useState('1');
   const [adding, setAdding] = useState(false);
   const activeStrand = strandId || String(strands.data?.[0]?.id ?? '');
   const rows = useQuery({
-    queryKey: ['curriculum', activeStrand, grade, semester],
-    queryFn: () => get<CurriculumRow[]>(`/curriculum?strandId=${activeStrand}&gradeLevel=${grade}&semester=${semester}`),
+    queryKey: ['curriculum', activeStrand, grade, term],
+    queryFn: () => get<CurriculumRow[]>(`/curriculum?strandId=${activeStrand}&gradeLevel=${grade}&term=${term}`),
     enabled: Boolean(activeStrand),
   });
   const remove = useMutation({
@@ -63,7 +63,7 @@ function ProgramTab() {
       <div className="flex flex-wrap items-end gap-3">
         <Field label="Strand">{(id) => <Select id={id} className="w-auto" value={activeStrand} onChange={(e) => setStrandId(e.target.value)}>{strands.data?.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}</Select>}</Field>
         <Field label="Grade">{(id) => <Select id={id} className="w-auto" value={grade} onChange={(e) => setGrade(e.target.value)}><option value="11">Grade 11</option><option value="12">Grade 12</option></Select>}</Field>
-        <Field label="Semester">{(id) => <Select id={id} className="w-auto" value={semester} onChange={(e) => setSemester(e.target.value)}><option value="1">1st semester</option><option value="2">2nd semester</option></Select>}</Field>
+        <Field label="Term">{(id) => <Select id={id} className="w-auto" value={term} onChange={(e) => setTerm(e.target.value)}><option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option></Select>}</Field>
         <Button className="ml-auto" variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>Add subject</Button>
       </div>
       {rows.isPending ? <Spinner /> : rows.isError ? <Alert tone="bad">{errorMessage(rows.error)}</Alert> : (
@@ -84,12 +84,12 @@ function ProgramTab() {
           </table>
         </TableWrap>
       )}
-      {adding ? <AddToProgram strands={strands.data ?? []} subjects={subjects.data ?? []} defaults={{ strandId: activeStrand, grade, semester }} onClose={() => setAdding(false)} /> : null}
+      {adding ? <AddToProgram strands={strands.data ?? []} subjects={subjects.data ?? []} defaults={{ strandId: activeStrand, grade, term }} onClose={() => setAdding(false)} /> : null}
     </div>
   );
 }
 
-function AddToProgram({ strands, subjects, defaults, onClose }: { strands: Strand[]; subjects: Subject[]; defaults: { strandId: string; grade: string; semester: string }; onClose: () => void }) {
+function AddToProgram({ strands, subjects, defaults, onClose }: { strands: Strand[]; subjects: Subject[]; defaults: { strandId: string; grade: string; term: string }; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [subjectId, setSubjectId] = useState('');
@@ -97,12 +97,12 @@ function AddToProgram({ strands, subjects, defaults, onClose }: { strands: Stran
   const [error, setError] = useState<string | null>(null);
   const subj = subjects.find((s) => s.id === Number(subjectId));
   const save = useMutation({
-    mutationFn: () => post('/curriculum', { subjectId: Number(subjectId), strandId: strandId === 'ALL' ? null : Number(strandId), gradeLevel: Number(defaults.grade), semester: Number(defaults.semester), sortOrder: 500 }),
+    mutationFn: () => post('/curriculum', { subjectId: Number(subjectId), strandId: strandId === 'ALL' ? null : Number(strandId), gradeLevel: Number(defaults.grade), term: Number(defaults.term), sortOrder: 500 }),
     onSuccess: () => { toast.ok('Subject added.'); void qc.invalidateQueries({ queryKey: ['curriculum'] }); onClose(); },
     onError: (e) => setError(errorMessage(e)),
   });
   return (
-    <Modal open onClose={onClose} title={`Add subject: Grade ${defaults.grade}, ${defaults.semester === '1' ? '1st' : '2nd'} semester`} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!subjectId} loading={save.isPending} onClick={() => save.mutate()}>Add</Button></>}>
+    <Modal open onClose={onClose} title={`Add subject: Grade ${defaults.grade}, Term ${defaults.term}`} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!subjectId} loading={save.isPending} onClick={() => save.mutate()}>Add</Button></>}>
       <div className="flex flex-col gap-3">
         <Field label="Subject">
           {(id) => (
@@ -308,7 +308,7 @@ function WeightCard({ p }: { p: WeightProfile }) {
       <div className="grid grid-cols-3 gap-3">
         {field('Written Work %', 'ww')}
         {field('Performance %', 'pt')}
-        {field('Quarterly %', 'qa')}
+        {field('Term Assessment %', 'qa')}
       </div>
       <div className="mt-3 flex items-center justify-between">
         <span className={sum === 100 ? 'text-sm text-ok' : 'text-sm text-bad'}>Total {sum}% {sum === 100 ? '' : '(must be 100)'}</span>

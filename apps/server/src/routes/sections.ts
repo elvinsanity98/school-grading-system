@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { audit } from '../audit';
 import { isFamily, isOffice, me, requireRole } from '../auth';
 import { conflict, forbidden, notFound, parse } from '../errors';
-import { compareLearners, quarterStates, recomputeSection } from '../services/grades';
+import { classState, compareLearners, recomputeSection } from '../services/grades';
 import { briefLearner } from '../services/present';
 import type { Db } from '../db';
 import { idParam, zNullableText, zText } from '../util';
@@ -41,7 +41,7 @@ const loadBody = z.object({ teacherId: z.number().int().positive().nullable() })
 const newLoadBody = z.object({
   sectionId: z.number().int().positive(),
   subjectId: z.number().int().positive(),
-  semester: z.union([z.literal(1), z.literal(2)]),
+  term: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   teacherId: z.number().int().positive().nullable().optional(),
 });
 
@@ -55,11 +55,11 @@ export async function generateClasses(db: Db, sectionId: number): Promise<number
   let created = 0;
   for (const c of curriculum) {
     const exists = await db.classAssignment.findUnique({
-      where: { sectionId_subjectId_semester: { sectionId, subjectId: c.subjectId, semester: c.semester } },
+      where: { sectionId_subjectId_term: { sectionId, subjectId: c.subjectId, term: c.term } },
     });
     if (exists) continue;
     await db.classAssignment.create({
-      data: { schoolYearId: section.schoolYearId, sectionId, subjectId: c.subjectId, semester: c.semester },
+      data: { schoolYearId: section.schoolYearId, sectionId, subjectId: c.subjectId, term: c.term },
     });
     created++;
   }
@@ -287,7 +287,7 @@ export default async function sectionsRoutes(app: FastifyInstance) {
     const where: Record<string, unknown> = {};
     if (schoolYearId) where.schoolYearId = schoolYearId;
     if (q.sectionId) where.sectionId = Number(q.sectionId);
-    if (q.semester) where.semester = Number(q.semester);
+    if (q.term) where.term = Number(q.term);
     if (q.unassigned === 'true') where.teacherId = null;
     // Teachers only ever see their own classes.
     if (user.role === 'TEACHER') where.teacherId = user.id;
@@ -299,13 +299,13 @@ export default async function sectionsRoutes(app: FastifyInstance) {
         subject: true,
         teacher: true,
         section: { include: { strand: true, _count: { select: { enrollments: true } } } },
-        quarters: true,
+        workflow: true,
       },
-      orderBy: [{ semester: 'asc' }, { section: { gradeLevel: 'asc' } }, { section: { name: 'asc' } }, { subject: { name: 'asc' } }],
+      orderBy: [{ term: 'asc' }, { section: { gradeLevel: 'asc' } }, { section: { name: 'asc' } }, { subject: { name: 'asc' } }],
     });
     return rows.map((c) => ({
       id: c.id,
-      semester: c.semester,
+      term: c.term,
       subject: { id: c.subject.id, code: c.subject.code, name: c.subject.name, type: c.subject.type },
       section: {
         id: c.section.id,
@@ -315,10 +315,7 @@ export default async function sectionsRoutes(app: FastifyInstance) {
         learners: c.section._count.enrollments,
       },
       teacher: c.teacher ? { id: c.teacher.id, fullName: c.teacher.fullName } : null,
-      statuses: [1, 2, 3, 4].map((quarter) => ({
-        quarter,
-        status: c.quarters.find((x) => x.quarter === quarter)?.status ?? 'DRAFT',
-      })),
+      status: c.workflow?.status ?? 'DRAFT',
     }));
   });
 
@@ -339,11 +336,11 @@ export default async function sectionsRoutes(app: FastifyInstance) {
     const section = await db.section.findUnique({ where: { id: body.sectionId } });
     if (!section) throw notFound('Section');
     const dup = await db.classAssignment.findUnique({
-      where: { sectionId_subjectId_semester: { sectionId: body.sectionId, subjectId: body.subjectId, semester: body.semester } },
+      where: { sectionId_subjectId_term: { sectionId: body.sectionId, subjectId: body.subjectId, term: body.term } },
     });
-    if (dup) throw conflict('That subject is already scheduled for this section and semester.');
+    if (dup) throw conflict('That subject is already scheduled for this section and term.');
     const c = await db.classAssignment.create({
-      data: { schoolYearId: section.schoolYearId, sectionId: body.sectionId, subjectId: body.subjectId, semester: body.semester, teacherId: body.teacherId ?? null },
+      data: { schoolYearId: section.schoolYearId, sectionId: body.sectionId, subjectId: body.subjectId, term: body.term, teacherId: body.teacherId ?? null },
     });
     await audit(db, req, 'CLASS_CREATED', 'ClassAssignment', c.id);
     reply.code(201);
@@ -364,6 +361,6 @@ export default async function sectionsRoutes(app: FastifyInstance) {
     const c = await db.classAssignment.findUnique({ where: { id } });
     if (!c) throw notFound('Class');
     if (isFamily(user) || (user.role === 'TEACHER' && c.teacherId !== user.id)) throw forbidden();
-    return quarterStates(db, c);
+    return classState(db, c);
   });
 }

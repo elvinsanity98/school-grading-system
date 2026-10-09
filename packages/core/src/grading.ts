@@ -3,13 +3,13 @@
  * Source: DepEd Order No. 8, s. 2015 (Policy Guidelines on Classroom Assessment
  * for the K to 12 Basic Education Program), as retained by DO 21, s. 2019.
  *
- * Steps for one learner, one subject, one quarter:
+ * Steps for one learner, one subject, one term:
  *   1. Total the raw scores and the highest possible scores (HPS) of each
- *      component: Written Work (WW), Performance Tasks (PT), Quarterly Assessment (QA).
+ *      component: Written Work (WW), Performance Tasks (PT), Term Assessment (QA).
  *   2. Percentage Score (PS)  = total score / total HPS x 100
  *   3. Weighted Score (WS)    = PS x component weight
  *   4. Initial Grade          = WS(WW) + WS(PT) + WS(QA)
- *   5. Quarterly Grade        = Initial Grade run through the transmutation table
+ *   5. Term Grade             = Initial Grade run through the transmutation table
  *
  * Values are rounded to 2 decimals at each step, so the numbers on screen add up
  * exactly the way a teacher would check them on paper.
@@ -21,7 +21,7 @@ export const COMPONENTS: readonly Component[] = ['WW', 'PT', 'QA'] as const;
 export const COMPONENT_LABEL: Record<Component, string> = {
   WW: 'Written Work',
   PT: 'Performance Tasks',
-  QA: 'Quarterly Assessment',
+  QA: 'Term Assessment',
 };
 
 /** Weights in percent. Must add up to 100. */
@@ -123,41 +123,35 @@ export function computeComponent(items: ItemScore[], weightPercent: number): Com
   return { total, hps, ps, ws, missing };
 }
 
-export interface QuarterInput {
+export interface TermGradeInput {
   ww: ItemScore[];
   pt: ItemScore[];
   qa: ItemScore[];
   weights: Weights;
 }
 
-export interface QuarterResult {
+export interface TermGradeResult {
   ww: ComponentResult;
   pt: ComponentResult;
   qa: ComponentResult;
   /** null until all three components have at least one counted item. */
   initialGrade: number | null;
-  quarterlyGrade: number | null;
+  termGrade: number | null;
   /** Items still blank across the three components. */
   missing: number;
 }
 
-export function computeQuarter(input: QuarterInput): QuarterResult {
+export function computeTermGrade(input: TermGradeInput): TermGradeResult {
   validateWeights(input.weights);
   const ww = computeComponent(input.ww, input.weights.ww);
   const pt = computeComponent(input.pt, input.weights.pt);
   const qa = computeComponent(input.qa, input.weights.qa);
   const missing = ww.missing + pt.missing + qa.missing;
   if (ww.ws == null || pt.ws == null || qa.ws == null) {
-    return { ww, pt, qa, initialGrade: null, quarterlyGrade: null, missing };
+    return { ww, pt, qa, initialGrade: null, termGrade: null, missing };
   }
   const initialGrade = roundTo(ww.ws + pt.ws + qa.ws);
-  return { ww, pt, qa, initialGrade, quarterlyGrade: transmute(initialGrade), missing };
-}
-
-/** Semester final grade: average of the two quarterly grades, whole number. */
-export function finalGrade(q1: number | null | undefined, q2: number | null | undefined): number | null {
-  if (q1 == null || q2 == null) return null;
-  return roundWhole((q1 + q2) / 2);
+  return { ww, pt, qa, initialGrade, termGrade: transmute(initialGrade), missing };
 }
 
 export interface GeneralAverageResult {
@@ -167,7 +161,7 @@ export interface GeneralAverageResult {
   count: number;
 }
 
-/** General average for a semester: every subject counts equally. */
+/** General average for a term: every subject counts equally. */
 export function generalAverage(finals: Array<number | null | undefined>): GeneralAverageResult {
   const have = finals.filter((f): f is number => f != null);
   const complete = finals.length > 0 && have.length === finals.length;

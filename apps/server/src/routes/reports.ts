@@ -1,20 +1,19 @@
-import { formatLearnerName, semesterOfQuarter, type HonorsLevel } from '@bnhs/core';
+import { formatLearnerName, TERMS, type HonorsLevel } from '@bnhs/core';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit';
 import { isFamily, isOffice, me, requireRole, type AuthUser } from '../auth';
 import { badRequest, forbidden, notFound } from '../errors';
-import { ageOn, newDoc, type Doc } from '../reports/pdf-kit';
+import { ageOn, newDoc, termLabel, type Doc } from '../reports/pdf-kit';
 import { blockFromCard, drawSf10, type Sf10Block } from '../reports/sf10';
 import { drawSf9, type SchoolInfo } from '../reports/sf9';
 import { classRecordXlsx, honorsXlsx, masterlistXlsx, sectionSummaryXlsx, type HonorsRow } from '../reports/xlsx';
 import { buildCard, buildCards, type Visibility } from '../services/card';
-import { compareLearners, loadClass, quarterStates } from '../services/grades';
+import { classState, compareLearners, loadClass } from '../services/grades';
 import { loadRecordData } from '../services/record';
 import { idParam } from '../util';
 
-const semesterSchema = z.union([z.literal(1), z.literal(2)]);
-const quarterSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
+const termSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -78,7 +77,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const user = me(req);
     const q = req.query as Record<string, string | undefined>;
     const enrollmentId = z.coerce.number().int().positive().parse(q.enrollmentId);
-    const semester = semesterSchema.parse(Number(q.semester ?? 1));
+    const term = termSchema.parse(Number(q.term ?? 1));
     const enrollment = await db.enrollment.findUnique({ where: { id: enrollmentId }, include: { schoolYear: true, learner: true } });
     if (!enrollment) throw notFound('Enrollment');
 
@@ -91,11 +90,11 @@ export default async function reportsRoutes(app: FastifyInstance) {
       if (wantsDraft(req)) visibility = 'all';
     }
 
-    const [card, school] = await Promise.all([buildCard(db, enrollmentId, semester, visibility), schoolInfo()]);
+    const [card, school] = await Promise.all([buildCard(db, enrollmentId, term, visibility), schoolInfo()]);
     const doc = newDoc(`SF9 - ${formatLearnerName(card.learner)}`);
     drawSf9(doc, card, school, { draft: visibility === 'all', schoolYearStart: enrollment.schoolYear.startDate, newPage: false });
-    await audit(db, req, 'SF9_PRINTED', 'Enrollment', enrollmentId, { semester, visibility });
-    return sendPdf(reply, doc, `SF9_${enrollment.learner.lastName}_${enrollment.learner.lrn}_Sem${semester}`);
+    await audit(db, req, 'SF9_PRINTED', 'Enrollment', enrollmentId, { term, visibility });
+    return sendPdf(reply, doc, `SF9_${enrollment.learner.lastName}_${enrollment.learner.lrn}_T${term}`);
   });
 
   /** Every report card of a section in one file, ready to print. */
@@ -103,20 +102,20 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const user = me(req);
     const q = req.query as Record<string, string | undefined>;
     const sectionId = z.coerce.number().int().positive().parse(q.sectionId);
-    const semester = semesterSchema.parse(Number(q.semester ?? 1));
+    const term = termSchema.parse(Number(q.term ?? 1));
     await assertAdviserOrOffice(user, sectionId);
     const section = await db.section.findUnique({ where: { id: sectionId }, include: { schoolYear: true } });
     if (!section) throw notFound('Section');
     const visibility: Visibility = wantsDraft(req) ? 'all' : 'approved';
     const enrollments = await db.enrollment.findMany({ where: { sectionId, status: { in: ['ENROLLED', 'LATE_ENROLLEE'] } }, select: { id: true } });
     if (!enrollments.length) throw badRequest('This section has no enrolled learners.');
-    const [cards, school] = await Promise.all([buildCards(db, enrollments.map((e) => e.id), semester, visibility), schoolInfo()]);
+    const [cards, school] = await Promise.all([buildCards(db, enrollments.map((e) => e.id), term, visibility), schoolInfo()]);
     const doc = newDoc(`SF9 - Grade ${section.gradeLevel} ${section.name}`);
     cards.forEach((card, i) =>
       drawSf9(doc, card, school, { draft: visibility === 'all', schoolYearStart: section.schoolYear.startDate, newPage: i > 0 }),
     );
-    await audit(db, req, 'SF9_SECTION_PRINTED', 'Section', sectionId, { semester, visibility, count: cards.length });
-    return sendPdf(reply, doc, `SF9_Grade${section.gradeLevel}_${section.name}_Sem${semester}`);
+    await audit(db, req, 'SF9_SECTION_PRINTED', 'Section', sectionId, { term, visibility, count: cards.length });
+    return sendPdf(reply, doc, `SF9_Grade${section.gradeLevel}_${section.name}_T${term}`);
   });
 
   // ------------------------------------------------------------ SF10 permanent record
@@ -132,11 +131,10 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
     const blocks: Array<Sf10Block & { sortKey: string }> = [];
     for (const e of learner.enrollments) {
-      for (const semester of [1, 2] as const) {
-        const card = await buildCard(db, e.id, semester, 'approved');
-        const any = card.subjects.some((s) => s.quarters.some((q) => q.grade != null));
-        if (!any) continue;
-        blocks.push({ ...blockFromCard(card, school), sortKey: `${e.schoolYear.name}-${semester}` });
+      for (const term of TERMS) {
+        const card = await buildCard(db, e.id, term, 'approved');
+        if (!card.subjects.some((s) => s.grade != null)) continue;
+        blocks.push({ ...blockFromCard(card, school), sortKey: `${e.schoolYear.name}-${term}` });
       }
     }
     for (const r of learner.externalRecords) {
@@ -144,21 +142,19 @@ export default async function reportsRoutes(app: FastifyInstance) {
         school: r.schoolName,
         schoolId: r.schoolId ?? '',
         schoolYear: r.schoolYear,
-        semester: r.semester,
+        period: r.period,
         gradeLevel: r.gradeLevel,
         strand: r.strandName ?? '',
         section: r.sectionName ?? '',
         subjects: (JSON.parse(r.subjects) as Array<{ type: string; subject: string; q1: number | null; q2: number | null; final: number | null; remarks: string }>).map((s) => ({
           type: s.type,
           subject: s.subject,
-          q1: s.q1,
-          q2: s.q2,
-          final: s.final,
+          grade: s.final ?? s.q2 ?? s.q1,
           action: s.remarks,
         })),
         generalAverage: r.generalAverage,
         remedial: [],
-        sortKey: `${r.schoolYear}-${r.semester}`,
+        sortKey: `${r.schoolYear}-${r.period}`,
       });
     }
     blocks.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
@@ -189,12 +185,10 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const user = me(req);
     const q = req.query as Record<string, string | undefined>;
     const classId = z.coerce.number().int().positive().parse(q.classId);
-    const quarter = quarterSchema.parse(Number(q.quarter ?? 1));
     if (isFamily(user)) throw forbidden();
     const cls = await loadClass(db, classId);
     if (user.role === 'TEACHER' && cls.teacherId !== user.id) throw forbidden('This is not your class.');
-    if (semesterOfQuarter(quarter) !== cls.semester) throw badRequest('That quarter is not in this semester.');
-    const [data, states, school] = await Promise.all([loadRecordData(db, cls, quarter), quarterStates(db, cls), schoolInfo()]);
+    const [data, state, school] = await Promise.all([loadRecordData(db, cls), classState(db, cls), schoolInfo()]);
     const buf = await classRecordXlsx(
       {
         school: school.name,
@@ -203,14 +197,13 @@ export default async function reportsRoutes(app: FastifyInstance) {
         section: `Grade ${cls.section.gradeLevel} - ${cls.section.name}`,
         strand: cls.section.strand.code,
         teacher: cls.teacher?.fullName ?? '',
-        semester: cls.semester,
-        quarter,
-        status: states.find((s) => s.quarter === quarter)?.status ?? 'DRAFT',
+        term: cls.term,
+        status: state.status,
       },
       data,
     );
-    await audit(db, req, 'CLASS_RECORD_EXPORTED', 'ClassAssignment', classId, { quarter });
-    return sendXlsx(reply, buf, `ClassRecord_${cls.subject.code}_${cls.section.gradeLevel}-${cls.section.name}_Q${quarter}`);
+    await audit(db, req, 'CLASS_RECORD_EXPORTED', 'ClassAssignment', classId, { term: cls.term });
+    return sendXlsx(reply, buf, `ClassRecord_${cls.subject.code}_${cls.section.gradeLevel}-${cls.section.name}_T${cls.term}`);
   });
 
   // ------------------------------------------------------------ section summary (Excel)
@@ -219,32 +212,32 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const user = me(req);
     const q = req.query as Record<string, string | undefined>;
     const sectionId = z.coerce.number().int().positive().parse(q.sectionId);
-    const semester = semesterSchema.parse(Number(q.semester ?? 1));
+    const term = termSchema.parse(Number(q.term ?? 1));
     await assertAdviserOrOffice(user, sectionId);
     const section = await db.section.findUnique({ where: { id: sectionId }, include: { strand: true, adviser: true, schoolYear: true } });
     if (!section) throw notFound('Section');
     const visibility: Visibility = wantsDraft(req) ? 'all' : 'approved';
     const enrollments = await db.enrollment.findMany({ where: { sectionId }, select: { id: true } });
-    const [cards, school] = await Promise.all([buildCards(db, enrollments.map((e) => e.id), semester, visibility), schoolInfo()]);
+    const [cards, school] = await Promise.all([buildCards(db, enrollments.map((e) => e.id), term, visibility), schoolInfo()]);
     const buf = await sectionSummaryXlsx({
       school: school.name,
       schoolYear: section.schoolYear.name,
       section: `Grade ${section.gradeLevel} - ${section.name}`,
       strand: section.strand.code,
       adviser: section.adviser?.fullName ?? '',
-      semester,
+      term,
       passing: school.passingGrade,
       subjects: (cards[0]?.subjects ?? []).map((s) => ({ subjectId: s.subjectId, name: s.name })),
       learners: cards.map((c) => ({
         ...c.learner,
-        grades: Object.fromEntries(c.subjects.map((s) => [s.subjectId, { q1: s.quarters[0]!.grade, q2: s.quarters[1]!.grade, final: s.finalGrade }])),
+        grades: Object.fromEntries(c.subjects.map((s) => [s.subjectId, s.grade])),
         generalAverage: c.generalAverage,
         remark: c.complete ? (c.generalAverage! >= school.passingGrade ? 'PASSED' : 'FAILED') : 'INCOMPLETE',
         honors: c.honors,
       })),
     });
-    await audit(db, req, 'SUMMARY_EXPORTED', 'Section', sectionId, { semester, visibility });
-    return sendXlsx(reply, buf, `Summary_Grade${section.gradeLevel}_${section.name}_Sem${semester}`);
+    await audit(db, req, 'SUMMARY_EXPORTED', 'Section', sectionId, { term, visibility });
+    return sendXlsx(reply, buf, `Summary_Grade${section.gradeLevel}_${section.name}_T${term}`);
   });
 
   // ------------------------------------------------------------ master list (Excel)
@@ -287,7 +280,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
   app.get('/reports/honors', { preHandler: office }, async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;
-    const semester = semesterSchema.parse(Number(q.semester ?? 1));
+    const term = termSchema.parse(Number(q.term ?? 1));
     const year = q.schoolYearId
       ? await db.schoolYear.findUnique({ where: { id: Number(q.schoolYearId) } })
       : await db.schoolYear.findFirst({ where: { isCurrent: true } });
@@ -300,7 +293,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       },
       select: { id: true },
     });
-    const cards = await buildCards(db, enrollments.map((e) => e.id), semester, 'approved');
+    const cards = await buildCards(db, enrollments.map((e) => e.id), term, 'approved');
     const rows: HonorsRow[] = cards
       .filter((c) => c.honors && c.generalAverage != null)
       .map((c) => ({
@@ -314,9 +307,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
     if (q.format === 'xlsx') {
       const school = await schoolInfo();
-      const buf = await honorsXlsx(`${school.name}  -  Honor roll, SY ${year.name}, ${semester === 1 ? '1st' : '2nd'} semester`, rows);
-      return sendXlsx(reply, buf, `Honors_${year.name}_Sem${semester}`);
+      const buf = await honorsXlsx(`${school.name}  -  Honor roll, SY ${year.name}, ${termLabel(term)}`, rows);
+      return sendXlsx(reply, buf, `Honors_${year.name}_T${term}`);
     }
-    return { schoolYear: year.name, semester, count: rows.length, rows };
+    return { schoolYear: year.name, term, count: rows.length, rows };
   });
 }

@@ -12,27 +12,11 @@ export const ROLE_LABEL: Record<Role, string> = {
 export const GRADE_LEVELS = [11, 12] as const;
 export type GradeLevel = (typeof GRADE_LEVELS)[number];
 
-export const SEMESTERS = [1, 2] as const;
-export type Semester = (typeof SEMESTERS)[number];
+/** A school year has three terms. Each term is one grading period: one grade per subject per term. */
+export const TERMS = [1, 2, 3] as const;
+export type Term = (typeof TERMS)[number];
 
-export const QUARTERS = [1, 2, 3, 4] as const;
-export type Quarter = (typeof QUARTERS)[number];
-
-/** Semester 1 = Q1 + Q2, semester 2 = Q3 + Q4. */
-export function semesterOfQuarter(q: number): Semester {
-  return q <= 2 ? 1 : 2;
-}
-
-export function quartersOfSemester(s: number): [Quarter, Quarter] {
-  return s === 1 ? [1, 2] : [3, 4];
-}
-
-/** Position of a quarter inside its semester: 1st or 2nd. */
-export function quarterSlot(q: number): 1 | 2 {
-  return q % 2 === 1 ? 1 : 2;
-}
-
-export const SEMESTER_LABEL: Record<Semester, string> = { 1: '1st Semester', 2: '2nd Semester' };
+export const TERM_LABEL: Record<Term, string> = { 1: 'Term 1', 2: 'Term 2', 3: 'Term 3' };
 
 export const TRACKS = ['ACADEMIC', 'TVL', 'SPORTS', 'ARTS_DESIGN'] as const;
 export type Track = (typeof TRACKS)[number];
@@ -59,7 +43,7 @@ export type EnrollmentStatus = (typeof ENROLLMENT_STATUSES)[number];
 export const LEARNER_STATUSES = ['ACTIVE', 'TRANSFERRED_OUT', 'DROPPED_OUT', 'GRADUATED'] as const;
 export type LearnerStatus = (typeof LEARNER_STATUSES)[number];
 
-/** Class record workflow for one quarter. */
+/** Class record workflow for one term. */
 export const RECORD_STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'RETURNED'] as const;
 export type RecordStatus = (typeof RECORD_STATUSES)[number];
 

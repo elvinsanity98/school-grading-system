@@ -28,7 +28,7 @@ export default function YearsPage() {
 
   return (
     <>
-      <PageHeader title="School years and grading periods" sub="Open a quarter so teachers can encode, then release approved grades to learners." actions={admin ? <Button variant="primary" icon={<CalendarPlus className="size-4" />} onClick={() => setEditing('new')}>New school year</Button> : undefined} />
+      <PageHeader title="School years and grading periods" sub="Open a term so teachers can encode, then release approved grades to learners." actions={admin ? <Button variant="primary" icon={<CalendarPlus className="size-4" />} onClick={() => setEditing('new')}>New school year</Button> : undefined} />
 
       {years.length === 0 ? (
         <Alert tone="warn" title="No school year yet">{admin ? 'Create the first school year to start.' : 'Ask the administrator to create a school year.'}</Alert>
@@ -64,12 +64,12 @@ export default function YearsPage() {
                 <TableWrap>
                   <table className={tableCls}>
                     <thead>
-                      <tr><th className={thCls}>Quarter</th><th className={thCls}>Encoding</th><th className={thCls}>Learners can see approved grades</th></tr>
+                      <tr><th className={thCls}>Term</th><th className={thCls}>Encoding</th><th className={thCls}>Learners can see approved grades</th></tr>
                     </thead>
                     <tbody>
                       {year.periods.map((p) => (
                         <tr key={p.id}>
-                          <td className={tdCls + ' font-medium'}>Quarter {p.quarter} <span className="text-xs font-normal text-muted">({p.quarter <= 2 ? '1st' : '2nd'} sem)</span></td>
+                          <td className={tdCls + ' font-medium'}>Term {p.term}</td>
                           <td className={tdCls}>
                             <Button size="sm" variant={p.status === 'OPEN' ? 'soft' : 'secondary'} icon={p.status === 'OPEN' ? <LockOpen className="size-3.5" /> : <Lock className="size-3.5" />} onClick={() => period.mutate({ id: p.id, status: p.status === 'OPEN' ? 'CLOSED' : 'OPEN' })}>
                               {p.status === 'OPEN' ? 'Open (click to close)' : 'Closed (click to open)'}
@@ -85,7 +85,7 @@ export default function YearsPage() {
                     </tbody>
                   </table>
                 </TableWrap>
-                <p className="mt-2 text-xs text-muted">Teachers can change scores only while a quarter is open. Registrars and administrators can still encode when it is closed.</p>
+                <p className="mt-2 text-xs text-muted">Teachers can change scores only while a term is open. Registrars and administrators can still encode when it is closed.</p>
               </Card>
               <SchoolDays year={year} />
             </div>

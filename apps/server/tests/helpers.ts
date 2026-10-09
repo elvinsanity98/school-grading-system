@@ -17,8 +17,8 @@ import { seedDemo } from '../src/demo/seed';
  */
 export const usingPostgres = process.env.TEST_DB === 'postgres';
 
-const sqliteMigrations = fileURLToPath(new URL('../prisma/migrations', import.meta.url));
-const postgresMigrations = fileURLToPath(new URL('../prisma/postgres/migrations', import.meta.url));
+export const sqliteMigrations = fileURLToPath(new URL('../prisma/migrations', import.meta.url));
+export const postgresMigrations = fileURLToPath(new URL('../prisma/postgres/migrations', import.meta.url));
 
 export interface TestEnv {
   app: FastifyInstance;
@@ -28,7 +28,7 @@ export interface TestEnv {
   sql?: (query: string) => Promise<Array<Record<string, unknown>>>;
 }
 
-function migrationFiles(dir: string): string[] {
+export function migrationFiles(dir: string): string[] {
   return readdirSync(dir)
     .filter((f) => /^\d/.test(f))
     .sort()

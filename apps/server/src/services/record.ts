@@ -1,4 +1,4 @@
-import { finalGrade, type ComponentResult, type Weights } from '@bnhs/core';
+import type { ComponentResult, Weights } from '@bnhs/core';
 import type { Db } from '../db';
 import { classWeights, compareLearners, computeForEnrollment, type LoadedClass } from './grades';
 import { briefLearner } from './present';
@@ -28,9 +28,8 @@ export interface RecordLearner {
   pt: ComponentResult;
   qa: ComponentResult;
   initialGrade: number | null;
-  quarterlyGrade: number | null;
+  termGrade: number | null;
   missing: number;
-  semesterView: { q1: number | null; q2: number | null; final: number | null };
 }
 
 export interface RecordData {
@@ -39,19 +38,17 @@ export interface RecordData {
   learners: RecordLearner[];
 }
 
-/** The class record of one quarter, computed live from the scores. */
-export async function loadRecordData(db: Db, cls: LoadedClass, quarter: number): Promise<RecordData> {
+/** The class record of one term, computed live from the scores. */
+export async function loadRecordData(db: Db, cls: LoadedClass): Promise<RecordData> {
   const weights = await classWeights(db, cls);
-  const [items, enrollments, stored] = await Promise.all([
+  const [items, enrollments] = await Promise.all([
     db.assessmentItem.findMany({
-      where: { classId: cls.id, quarter },
+      where: { classId: cls.id },
       include: { scores: true },
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     }),
     db.enrollment.findMany({ where: { sectionId: cls.sectionId }, include: { learner: true } }),
-    db.quarterlyGrade.findMany({ where: { classId: cls.id } }),
   ]);
-  const [qa, qb] = cls.semester === 1 ? [1, 2] : [3, 4];
 
   const learners = enrollments
     .map((e): RecordLearner => {
@@ -61,9 +58,6 @@ export async function loadRecordData(db: Db, cls: LoadedClass, quarter: number):
         const row = it.scores.find((s) => s.enrollmentId === e.id);
         if (row) scores[it.id] = { score: row.score, excused: row.excused };
       }
-      const perQuarter: Record<number, number | null> = {};
-      for (const g of stored.filter((x) => x.enrollmentId === e.id)) perQuarter[g.quarter] = g.quarterlyGrade;
-      perQuarter[quarter] = detail.quarterlyGrade;
       return {
         enrollmentId: e.id,
         status: e.status,
@@ -73,9 +67,8 @@ export async function loadRecordData(db: Db, cls: LoadedClass, quarter: number):
         pt: detail.pt,
         qa: detail.qa,
         initialGrade: detail.initialGrade,
-        quarterlyGrade: detail.quarterlyGrade,
+        termGrade: detail.termGrade,
         missing: detail.missing,
-        semesterView: { q1: perQuarter[qa] ?? null, q2: perQuarter[qb] ?? null, final: finalGrade(perQuarter[qa], perQuarter[qb]) },
       };
     })
     .sort(compareLearners);

@@ -11,8 +11,8 @@ import {
   headerRow,
   labelValue,
   logoBuffer,
-  ordinalSemester,
   signatureLine,
+  termLabel,
   type Column,
   type Doc,
 } from './pdf-kit';
@@ -20,9 +20,8 @@ import {
 export interface Sf10Subject {
   type: string;
   subject: string;
-  q1: number | null;
-  q2: number | null;
-  final: number | null;
+  /** The term grade (for a school with other grading periods, its final grade for the period). */
+  grade: number | null;
   action: string;
 }
 
@@ -30,7 +29,8 @@ export interface Sf10Block {
   school: string;
   schoolId: string;
   schoolYear: string;
-  semester: number;
+  /** For example "Term 2", or as another school named it. */
+  period: string;
   gradeLevel: number;
   strand: string;
   section: string;
@@ -52,22 +52,20 @@ export interface Sf10Learner {
 
 const TYPE_LABEL: Record<string, string> = { CORE: 'Core', APPLIED: 'Applied', SPECIALIZED: 'Specialized' };
 
-/** Turns the approved semester cards of this school into SF10 blocks. */
+/** Turns the approved term cards of this school into SF10 blocks. */
 export function blockFromCard(card: Card, school: SchoolInfo): Sf10Block {
   return {
     school: school.name,
     schoolId: school.schoolId,
     schoolYear: card.schoolYear.name,
-    semester: card.semester,
+    period: termLabel(card.term),
     gradeLevel: card.section.gradeLevel,
     strand: card.section.strandName,
     section: card.section.name,
     subjects: card.subjects.map((s) => ({
       type: TYPE_LABEL[s.type] ?? s.type,
       subject: s.name,
-      q1: s.quarters[0]!.grade,
-      q2: s.quarters[1]!.grade,
-      final: s.finalGrade,
+      grade: s.grade,
       action: s.remedial ? (s.remedial.passed ? 'Passed (remedial)' : 'Failed') : s.remark === 'PASSED' ? 'Passed' : s.remark === 'FAILED' ? 'Failed' : '',
     })),
     generalAverage: card.generalAverage,
@@ -75,7 +73,7 @@ export function blockFromCard(card: Card, school: SchoolInfo): Sf10Block {
       .filter((s) => s.remedial)
       .map((s) => ({
         subject: s.name,
-        final: s.finalGrade ?? 0,
+        final: s.grade ?? 0,
         mark: s.remedial!.mark,
         recomputed: s.remedial!.recomputed,
         dateFrom: s.remedial!.dateFrom,
@@ -86,10 +84,8 @@ export function blockFromCard(card: Card, school: SchoolInfo): Sf10Block {
 
 const COLS: Column[] = [
   { label: 'Type', width: 62, align: 'center' },
-  { label: 'SUBJECTS', width: 250 },
-  { label: 'Q1/Q3', width: 46, align: 'center' },
-  { label: 'Q2/Q4', width: 46, align: 'center' },
-  { label: 'Sem Final', width: 56, align: 'center' },
+  { label: 'SUBJECTS', width: 336 },
+  { label: 'Term Grade', width: 62, align: 'center' },
   { label: 'Action Taken', width: 72, align: 'center' },
 ];
 
@@ -139,7 +135,7 @@ export function drawSf10(doc: Doc, learner: Sf10Learner, blocks: Sf10Block[], sc
     y += 13;
     labelValue(doc, PAGE.margin, y, 'Grade level:', String(b.gradeLevel), 58, 40, 8.5);
     labelValue(doc, PAGE.margin + 110, y, 'SY:', b.schoolYear, 20, 70, 8.5);
-    labelValue(doc, PAGE.margin + 210, y, 'Semester:', ordinalSemester(b.semester), 48, 80, 8.5);
+    labelValue(doc, PAGE.margin + 210, y, 'Term:', b.period, 30, 100, 8.5);
     labelValue(doc, PAGE.margin + 370, y, 'Section:', b.section, 42, 120, 8.5);
     y += 12;
     labelValue(doc, PAGE.margin, y, 'Track / Strand:', b.strand, 70, CONTENT_WIDTH - 70, 8.5);
@@ -153,10 +149,10 @@ export function drawSf10(doc: Doc, learner: Sf10Learner, blocks: Sf10Block[], sc
         y += headerRow(doc, PAGE.margin, y, COLS, 8);
       }
       const failed = s.action === 'Failed';
-      y += drawRow(doc, PAGE.margin, y, COLS, [s.type, s.subject, s.q1 ?? '', s.q2 ?? '', s.final ?? '', s.action], {
+      y += drawRow(doc, PAGE.margin, y, COLS, [s.type, s.subject, s.grade ?? '', s.action], {
         size: 8,
         padY: 2.5,
-        cellStyle: failed ? { 4: { bold: true, color: COLOR.fail }, 5: { color: COLOR.fail } } : { 4: { bold: true } },
+        cellStyle: failed ? { 2: { bold: true, color: COLOR.fail }, 3: { color: COLOR.fail } } : { 2: { bold: true } },
       });
     }
     y += drawRow(
@@ -164,11 +160,11 @@ export function drawSf10(doc: Doc, learner: Sf10Learner, blocks: Sf10Block[], sc
       PAGE.margin,
       y,
       [
-        { label: '', width: 360 },
-        { label: '', width: 56, align: 'center' },
-        { label: '', width: 72 + 44, align: 'center' },
+        { label: '', width: 398 },
+        { label: '', width: 62, align: 'center' },
+        { label: '', width: 72, align: 'center' },
       ],
-      ['GENERAL AVERAGE FOR THE SEMESTER', b.generalAverage ?? '', ''],
+      ['GENERAL AVERAGE FOR THE TERM', b.generalAverage ?? '', ''],
       { size: 8.5, bold: true, fill: COLOR.head, padY: 3 },
     );
 

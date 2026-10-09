@@ -1,9 +1,7 @@
 import {
   DEFAULT_HONORS_POLICY,
-  finalGrade,
   generalAverage,
   honorsFor,
-  quartersOfSemester,
   recomputedFinal,
   remarkFor,
   SCHOOL_MONTHS,
@@ -16,19 +14,12 @@ import { notFound } from '../errors';
 import { compareLearners } from './grades';
 
 /**
- * Which quarterly grades may appear on a card.
+ * Which grades may appear on a card.
  *   all      - everything computed so far (advisers and the office reviewing)
- *   approved - only quarters the registrar has approved (official printing)
- *   released - approved AND released to learners (student / parent portal)
+ *   approved - only class records the registrar has approved (official printing)
+ *   released - approved AND the term released to learners (student / parent portal)
  */
 export type Visibility = 'all' | 'approved' | 'released';
-
-export interface CardQuarter {
-  quarter: number;
-  grade: number | null;
-  status: string;
-  missing: number;
-}
 
 export interface CardSubject {
   classId: number;
@@ -36,8 +27,10 @@ export interface CardSubject {
   code: string;
   name: string;
   type: string;
-  quarters: CardQuarter[];
-  finalGrade: number | null;
+  /** The term grade (the subject's final grade for the term); null while hidden or incomplete. */
+  grade: number | null;
+  status: string;
+  missing: number;
   remark: Remark;
   remedial: { mark: number; recomputed: number; dateFrom: string | null; dateTo: string | null; passed: boolean } | null;
 }
@@ -67,16 +60,15 @@ export interface Card {
   status: string;
   section: { id: number; name: string; gradeLevel: number; strandCode: string; strandName: string; track: string; adviser: string | null };
   schoolYear: { id: number; name: string };
-  semester: number;
-  quarters: [number, number];
+  term: number;
   subjects: CardSubject[];
   generalAverage: number | null;
   complete: boolean;
   honors: HonorsLevel | null;
   attendance: CardAttendanceMonth[];
-  /** values[valueKey][quarter] = AO | SO | RO | NO */
-  values: Record<string, Record<number, string>>;
-  /** true when some grade is hidden because its quarter is not approved / released yet */
+  /** values[valueKey] = AO | SO | RO | NO for this term */
+  values: Record<string, string>;
+  /** true when some grade is hidden because its class record is not approved / released yet */
   hasHidden: boolean;
 }
 
@@ -102,12 +94,7 @@ export async function loadHonorsPolicy(db: Db): Promise<{ policy: HonorsPolicy; 
   };
 }
 
-export async function buildCards(
-  db: Db,
-  enrollmentIds: number[],
-  semester: number,
-  visibility: Visibility,
-): Promise<Card[]> {
+export async function buildCards(db: Db, enrollmentIds: number[], term: number, visibility: Visibility): Promise<Card[]> {
   if (!enrollmentIds.length) return [];
   const enrollments = await db.enrollment.findMany({
     where: { id: { in: enrollmentIds } },
@@ -119,24 +106,23 @@ export async function buildCards(
   const sectionIds = [...new Set(enrollments.map((e) => e.sectionId))];
   const yearIds = [...new Set(enrollments.map((e) => e.schoolYearId))];
   const [classes, grades, periods, attendance, values, remedials, schoolDays] = await Promise.all([
-    db.classAssignment.findMany({ where: { sectionId: { in: sectionIds }, semester }, include: { subject: true } }),
-    db.quarterlyGrade.findMany({ where: { enrollmentId: { in: enrollmentIds }, semester } }),
-    db.gradingPeriod.findMany({ where: { schoolYearId: { in: yearIds } } }),
+    db.classAssignment.findMany({ where: { sectionId: { in: sectionIds }, term }, include: { subject: true } }),
+    db.termGrade.findMany({ where: { enrollmentId: { in: enrollmentIds }, term } }),
+    db.gradingPeriod.findMany({ where: { schoolYearId: { in: yearIds }, term } }),
     db.attendance.findMany({ where: { enrollmentId: { in: enrollmentIds } } }),
-    db.observedValue.findMany({ where: { enrollmentId: { in: enrollmentIds } } }),
-    db.remedial.findMany({ where: { enrollmentId: { in: enrollmentIds }, semester } }),
+    db.observedValue.findMany({ where: { enrollmentId: { in: enrollmentIds }, term } }),
+    db.remedial.findMany({ where: { enrollmentId: { in: enrollmentIds }, term } }),
     db.schoolDays.findMany({ where: { schoolYearId: { in: yearIds } } }),
   ]);
   const gradeClassIds = [...new Set([...classes.map((c) => c.id), ...grades.map((g) => g.classId)])];
-  const workflow = await db.classQuarter.findMany({ where: { classId: { in: gradeClassIds } } });
+  const workflow = await db.classWorkflow.findMany({ where: { classId: { in: gradeClassIds } } });
 
   const strandIds = [...new Set(enrollments.map((e) => e.section.strandId))];
   const gradeLevels = [...new Set(enrollments.map((e) => e.section.gradeLevel))];
   const curriculum = await db.curriculumSubject.findMany({
-    where: { semester, gradeLevel: { in: gradeLevels }, OR: [{ strandId: null }, { strandId: { in: strandIds } }] },
+    where: { term, gradeLevel: { in: gradeLevels }, OR: [{ strandId: null }, { strandId: { in: strandIds } }] },
   });
 
-  const [q1, q2] = quartersOfSemester(semester);
   const out: Card[] = [];
 
   for (const e of enrollments) {
@@ -156,28 +142,26 @@ export async function buildCards(
           a.subject.name.localeCompare(b.subject.name),
       );
     let hasHidden = false;
+    const period = periods.find((p) => p.schoolYearId === e.schoolYearId);
 
     const subjects: CardSubject[] = myClasses.map((c) => {
-      const quarters: CardQuarter[] = [q1, q2].map((quarter) => {
-        // Prefer the row of the current class; fall back to a class the learner left.
-        const rows = grades.filter((g) => g.enrollmentId === e.id && g.subjectId === c.subjectId && g.quarter === quarter);
-        const row = rows.find((g) => g.classId === c.id) ?? rows[0];
-        const wf = row ? workflow.find((w) => w.classId === row.classId && w.quarter === quarter) : undefined;
-        const status = wf?.status ?? 'DRAFT';
-        const period = periods.find((p) => p.schoolYearId === e.schoolYearId && p.quarter === quarter);
-        let visible = true;
-        if (visibility === 'approved') visible = status === 'APPROVED';
-        if (visibility === 'released') visible = status === 'APPROVED' && Boolean(period?.released);
-        const raw = row?.quarterlyGrade ?? null;
-        if (!visible && raw != null) hasHidden = true;
-        return { quarter, grade: visible ? raw : null, status, missing: row?.missing ?? 0 };
-      });
-      const fin = finalGrade(quarters[0]!.grade, quarters[1]!.grade);
+      // Prefer the row of the current class; fall back to a class the learner left for the same subject.
+      const rows = grades.filter((g) => g.enrollmentId === e.id && g.subjectId === c.subjectId);
+      const row = rows.find((g) => g.classId === c.id) ?? rows[0];
+      const wf = row ? workflow.find((w) => w.classId === row.classId) : undefined;
+      const status = wf?.status ?? 'DRAFT';
+      let visible = true;
+      if (visibility === 'approved') visible = status === 'APPROVED';
+      if (visibility === 'released') visible = status === 'APPROVED' && Boolean(period?.released);
+      const raw = row?.termGrade ?? null;
+      if (!visible && raw != null) hasHidden = true;
+      const grade = visible ? raw : null;
+
       const rem = remedials.find((r) => r.enrollmentId === e.id && r.subjectId === c.subjectId);
       let remedial: CardSubject['remedial'] = null;
-      let effectiveFinal = fin;
-      if (rem && fin != null && fin < passing) {
-        const recomputed = recomputedFinal(fin, rem.mark);
+      let effective = grade;
+      if (rem && grade != null && grade < passing) {
+        const recomputed = recomputedFinal(grade, rem.mark);
         remedial = {
           mark: rem.mark,
           recomputed,
@@ -185,7 +169,7 @@ export async function buildCards(
           dateTo: rem.dateTo?.toISOString().slice(0, 10) ?? null,
           passed: recomputed >= passing,
         };
-        effectiveFinal = recomputed;
+        effective = recomputed;
       }
       return {
         classId: c.id,
@@ -193,18 +177,19 @@ export async function buildCards(
         code: c.subject.code,
         name: c.subject.name,
         type: c.subject.type,
-        quarters,
-        finalGrade: fin,
-        remark: remarkFor(effectiveFinal, passing),
+        grade,
+        status,
+        missing: row?.missing ?? 0,
+        remark: remarkFor(effective, passing),
         remedial,
       };
     });
 
-    // The general average uses the final grades as first computed; remedial results are shown next to them.
-    const ga = generalAverage(subjects.map((s) => s.finalGrade));
+    // The general average uses the term grades as first computed; remedial results are shown next to them.
+    const ga = generalAverage(subjects.map((s) => s.grade));
     const honors = honorsFor(
       ga.average,
-      subjects.map((s) => s.finalGrade),
+      subjects.map((s) => s.grade),
       policy,
     );
 
@@ -224,9 +209,7 @@ export async function buildCards(
     });
 
     const vals: Card['values'] = {};
-    for (const v of values.filter((x) => x.enrollmentId === e.id)) {
-      (vals[v.valueKey] ??= {})[v.quarter] = v.marking;
-    }
+    for (const v of values.filter((x) => x.enrollmentId === e.id)) vals[v.valueKey] = v.marking;
 
     out.push({
       enrollmentId: e.id,
@@ -252,8 +235,7 @@ export async function buildCards(
         adviser: sec.adviser?.fullName ?? null,
       },
       schoolYear: { id: e.schoolYear.id, name: e.schoolYear.name },
-      semester,
-      quarters: [q1, q2],
+      term,
       subjects,
       generalAverage: ga.average,
       complete: ga.complete,
@@ -267,8 +249,8 @@ export async function buildCards(
   return out.sort((a, b) => compareLearners(a.learner, b.learner));
 }
 
-export async function buildCard(db: Db, enrollmentId: number, semester: number, visibility: Visibility): Promise<Card> {
-  const [card] = await buildCards(db, [enrollmentId], semester, visibility);
+export async function buildCard(db: Db, enrollmentId: number, term: number, visibility: Visibility): Promise<Card> {
+  const [card] = await buildCards(db, [enrollmentId], term, visibility);
   if (!card) throw notFound('Enrollment');
   return card;
 }

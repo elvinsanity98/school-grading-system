@@ -3,7 +3,7 @@
 Senior High School grading system for **Balakan National High School** (DepEd, Philippines). It follows
 DepEd Order No. 8, s. 2015 for computing grades and runs as a **website** and as an **Android app** from one codebase.
 
-- Teachers keep their class record online: items, scores, automatic Written Work / Performance Task / Quarterly Assessment computation and transmutation.
+- Teachers keep their class record online: items, scores, automatic Written Work / Performance Task / Term Assessment computation and transmutation.
 - The registrar approves class records, releases grades, manages learners, sections and enrollment.
 - Advisers enter attendance and observed values and print the **SF9** report card.
 - The registrar prints the **SF10** permanent record, master lists, summaries and honor rolls.
@@ -24,7 +24,7 @@ npm run demo
 ```
 
 Open <http://localhost:3000> and press one of the role buttons (administrator, registrar, class adviser, subject teacher, learner,
-parent). They all use the password `Demo#2026`. The demo has 68 made-up learners in 5 sections: a finished semester, an approvals queue and a class still being encoded.
+parent). They all use the password `Demo#2026`. The demo has 68 made-up learners in 5 sections: two finished terms, an approvals queue and a class still being encoded.
 It lives in its own file (`apps/server/data/demo.db`) and never touches real data.
 
 **Want a public link to show others?** Deploy the same thing online with one click: in Render choose New, Blueprint and pick
@@ -37,7 +37,7 @@ this repository (`render.yaml`). See *Public demo* in [docs/DEPLOYMENT.md](docs/
 2. Open the address it shows. The **first screen creates the school, the administrator account and the first
    school year**. There are no default passwords.
 3. Follow the *Getting started* checklist on the dashboard: school profile, curriculum, teachers, sections,
-   learners, open Quarter 1.
+   learners, open Term 1.
 4. Teachers and staff open the same address in any browser on the school network (phones too), or install the
    Android app and type the server address once.
 
@@ -46,16 +46,15 @@ More: [docs/USER-GUIDE.md](docs/USER-GUIDE.md) (by role), [docs/DEPLOYMENT.md](d
 
 ## How grades are computed
 
-For one learner, one subject, one quarter (DO 8, s. 2015):
+For one learner, one subject, one term (DO 8, s. 2015; the school year has three terms):
 
 | Step | Rule |
 | --- | --- |
 | Percentage Score | total score / highest possible score x 100, per component |
 | Weighted Score | Percentage Score x component weight |
-| Initial Grade | Weighted Written Work + Performance Tasks + Quarterly Assessment |
-| Quarterly Grade | Initial Grade through the DepEd transmutation table (60 becomes 75, 100 stays 100) |
-| Semester final grade | average of the two quarterly grades |
-| General average | average of the final grades of all subjects |
+| Initial Grade | Weighted Written Work + Performance Tasks + Term Assessment |
+| Term grade | Initial Grade through the DepEd transmutation table (60 becomes 75, 100 stays 100); this is the grade on the report card |
+| General average | average of the term grades of all subjects of the term |
 
 Weights depend on the subject and the track: core 25/50/25, academic applied and specialized 25/45/30, academic
 Work Immersion / Research / Business Enterprise Simulation 35/40/25, TVL / Sports / Arts and Design 20/60/20. They are
@@ -66,13 +65,13 @@ editable by the administrator. Worked example and all rules: [docs/DEPED-RULES.m
 | Area | What it does |
 | --- | --- |
 | Class record | Grid with sticky headers, live computation while typing, autosave, paste from Excel, `EX` for excused items, phone-friendly "by learner" view, Excel export |
-| Workflow | Draft, submitted, approved (locked) or returned with a note. Teachers ask the registrar to reopen an approved record. Quarters open and close, and are released to learners separately |
+| Workflow | Draft, submitted, approved (locked) or returned with a note. Teachers ask the registrar to reopen an approved record. Terms open and close, and are released to learners separately |
 | Learners | Records, CSV import with validation, enrollment, moves between sections, transfers and drop-outs, records from previous schools |
 | Report cards | SF9-SHS PDF with grades, descriptors, attendance and observed values; whole section in one file; draft copies are watermarked |
-| Permanent record | SF10-SHS PDF from all approved semesters plus encoded previous-school records |
+| Permanent record | SF10-SHS PDF from all approved terms plus encoded previous-school records |
 | Lists | Summary of grades, master list, honor roll (DO 36, s. 2016) as Excel |
 | Remedial | Remedial marks and recomputed final grades |
-| Early warning | Learners with a quarterly grade below 75 on the adviser's and teacher's dashboard |
+| Early warning | Learners with a term grade below 75 on the adviser's and teacher's dashboard |
 | People | Administrator, registrar, teacher, learner and parent roles; one-time passwords; account lock after repeated wrong passwords |
 | Safety | Audit log of every important action, one-click database backup (SQLite), all traffic can run over HTTPS, tables locked away from Supabase's public web API |
 
@@ -122,7 +121,7 @@ locked-out administrator. Copy `apps/server/.env.example` to `.env` to change po
 - **Needs the school server.** The app opens without internet but cannot load or save grades without reaching the server. There is no offline queue.
 - **Forms are not pixel copies of the official SF9 / SF10.** They carry the same content and layout logic and print on short bond paper. Confirm with your division that printed copies are acceptable, and use DepEd's LIS where it is required.
 - **Weights and the transmutation table come from DO 8, s. 2015** as retained by later orders. If DepEd or your division issues new rules (for example a revised Senior High School curriculum), the administrator can edit weights and the curriculum, but the transmutation table and rounding rules are in code (`packages/core`).
-- **The sample curriculum is a sample.** Subjects and their semesters differ between schools. Compare it with the program BNHS actually offers (Setup, Curriculum) before creating sections.
+- **The sample curriculum is a sample.** Subjects and the term they are taught in differ between schools. Compare it with the program BNHS actually offers (Setup, Curriculum) before creating sections.
 - **Node.js 20 on Windows:** the database driver can crash at *shutdown* (after all work is saved) on Node 20. Use Node 22 LTS or newer on the server to avoid it.
 - SQLite is the default and fits one school comfortably. **PostgreSQL / Supabase** is supported by setting `DATABASE_URL` (docs/DEPLOYMENT.md). It passes the whole test suite on a local PostgreSQL stand-in but **has not been run against a live Supabase project**, which needs the database password.
 - Docker and CI files are provided but were not run on the development machine.

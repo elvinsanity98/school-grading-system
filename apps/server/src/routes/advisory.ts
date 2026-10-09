@@ -1,4 +1,4 @@
-import { OBSERVED_VALUES, VALUE_MARKINGS, quartersOfSemester, remarkFor } from '@bnhs/core';
+import { OBSERVED_VALUES, VALUE_MARKINGS, remarkFor } from '@bnhs/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit';
@@ -10,8 +10,7 @@ import { compareLearners } from '../services/grades';
 import { briefLearner } from '../services/present';
 import { idParam, iso, zOptDate } from '../util';
 
-const semesterSchema = z.union([z.literal(1), z.literal(2)]);
-const quarterSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
+const termSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 
 const attendanceBody = z.object({
   month: z.number().int().min(1).max(12),
@@ -28,7 +27,7 @@ const attendanceBody = z.object({
 });
 
 const valuesBody = z.object({
-  quarter: quarterSchema,
+  term: termSchema,
   entries: z
     .array(
       z.object({
@@ -43,7 +42,7 @@ const valuesBody = z.object({
 
 const remedialBody = z.object({
   subjectId: z.number().int().positive(),
-  semester: semesterSchema,
+  term: termSchema,
   /** null removes the remedial record */
   mark: z.number().int().min(0).max(100).nullable(),
   dateFrom: zOptDate,
@@ -75,13 +74,13 @@ export default async function advisoryRoutes(app: FastifyInstance) {
   app.get('/sections/:id/summary', async (req) => {
     const section = await openSection(req, idParam(req));
     const q = req.query as Record<string, string | undefined>;
-    const semester = semesterSchema.parse(Number(q.semester ?? 1));
+    const term = termSchema.parse(Number(q.term ?? 1));
     const visibility = visibilityFrom(q.visibility, 'all');
     const enrollments = await db.enrollment.findMany({ where: { sectionId: section.id }, select: { id: true } });
-    const cards = await buildCards(db, enrollments.map((e) => e.id), semester, visibility);
+    const cards = await buildCards(db, enrollments.map((e) => e.id), term, visibility);
     const classes = await db.classAssignment.findMany({
-      where: { sectionId: section.id, semester },
-      include: { subject: true, teacher: true, quarters: true },
+      where: { sectionId: section.id, term },
+      include: { subject: true, teacher: true, workflow: true },
     });
     const { passing } = await loadHonorsPolicy(db);
 
@@ -94,10 +93,7 @@ export default async function advisoryRoutes(app: FastifyInstance) {
         name: s.name,
         type: s.type,
         teacher: cls?.teacher?.fullName ?? null,
-        statuses: quartersOfSemester(semester).map((quarter) => ({
-          quarter,
-          status: cls?.quarters.find((x) => x.quarter === quarter)?.status ?? 'DRAFT',
-        })),
+        status: cls?.workflow?.status ?? 'DRAFT',
       };
     });
 
@@ -105,17 +101,12 @@ export default async function advisoryRoutes(app: FastifyInstance) {
       enrollmentId: c.enrollmentId,
       status: c.status,
       learner: briefLearner(c.learner),
-      grades: Object.fromEntries(
-        c.subjects.map((s) => [
-          s.subjectId,
-          { q1: s.quarters[0]!.grade, q2: s.quarters[1]!.grade, final: s.finalGrade, remark: s.remark, remedial: s.remedial },
-        ]),
-      ),
+      grades: Object.fromEntries(c.subjects.map((s) => [s.subjectId, { grade: s.grade, remark: s.remark, remedial: s.remedial }])),
       generalAverage: c.generalAverage,
       complete: c.complete,
       honors: c.honors,
       remark: c.complete ? remarkFor(c.generalAverage, passing) : 'INCOMPLETE',
-      failed: c.subjects.filter((s) => s.finalGrade != null && s.finalGrade < passing).length,
+      failed: c.subjects.filter((s) => s.grade != null && s.grade < passing).length,
     }));
 
     return {
@@ -127,8 +118,7 @@ export default async function advisoryRoutes(app: FastifyInstance) {
         adviser: section.adviser?.fullName ?? null,
         schoolYear: section.schoolYear.name,
       },
-      semester,
-      quarters: quartersOfSemester(semester),
+      term,
       visibility,
       passing,
       subjects,
@@ -143,7 +133,7 @@ export default async function advisoryRoutes(app: FastifyInstance) {
     if (!e) throw notFound('Enrollment');
     await openSection(req, e.sectionId);
     const q = req.query as Record<string, string | undefined>;
-    return buildCard(db, id, semesterSchema.parse(Number(q.semester ?? 1)), visibilityFrom(q.visibility, 'all'));
+    return buildCard(db, id, termSchema.parse(Number(q.term ?? 1)), visibilityFrom(q.visibility, 'all'));
   });
 
   // ------------------------------------------------------------ attendance
@@ -214,13 +204,13 @@ export default async function advisoryRoutes(app: FastifyInstance) {
 
   app.get('/sections/:id/values', async (req) => {
     const section = await openSection(req, idParam(req));
-    const quarter = quarterSchema.parse(Number((req.query as { quarter?: string }).quarter ?? 1));
+    const term = termSchema.parse(Number((req.query as { term?: string }).term ?? 1));
     const [enrollments, rows] = await Promise.all([
       db.enrollment.findMany({ where: { sectionId: section.id }, include: { learner: true } }),
-      db.observedValue.findMany({ where: { quarter, enrollment: { sectionId: section.id } } }),
+      db.observedValue.findMany({ where: { term, enrollment: { sectionId: section.id } } }),
     ]);
     return {
-      quarter,
+      term,
       statements: OBSERVED_VALUES,
       learners: enrollments
         .map((e) => ({
@@ -249,17 +239,17 @@ export default async function advisoryRoutes(app: FastifyInstance) {
     await db.$transaction(async (tx) => {
       for (let i = 0; i < cleared.length; i += 300) {
         await tx.observedValue.deleteMany({
-          where: { quarter: body.quarter, OR: cleared.slice(i, i + 300).map((e) => ({ enrollmentId: e.enrollmentId, valueKey: e.valueKey })) },
+          where: { term: body.term, OR: cleared.slice(i, i + 300).map((e) => ({ enrollmentId: e.enrollmentId, valueKey: e.valueKey })) },
         });
       }
       await bulkUpsert(tx, {
         table: 'ObservedValue',
-        columns: ['enrollmentId', 'quarter', 'valueKey', 'marking'],
-        key: ['enrollmentId', 'quarter', 'valueKey'],
-        rows: marked.map((e) => [e.enrollmentId, body.quarter, e.valueKey, e.marking]),
+        columns: ['enrollmentId', 'term', 'valueKey', 'marking'],
+        key: ['enrollmentId', 'term', 'valueKey'],
+        rows: marked.map((e) => [e.enrollmentId, body.term, e.valueKey, e.marking]),
       });
     });
-    await audit(db, req, 'VALUES_SAVED', 'Section', section.id, { quarter: body.quarter, entries: body.entries.length });
+    await audit(db, req, 'VALUES_SAVED', 'Section', section.id, { term: body.term, entries: body.entries.length });
     return { saved: body.entries.length };
   });
 
@@ -268,17 +258,17 @@ export default async function advisoryRoutes(app: FastifyInstance) {
   /** Learners with a failed subject, with any remedial mark already recorded. */
   app.get('/sections/:id/remedial', async (req) => {
     const section = await openSection(req, idParam(req));
-    const semester = semesterSchema.parse(Number((req.query as { semester?: string }).semester ?? 1));
+    const term = termSchema.parse(Number((req.query as { term?: string }).term ?? 1));
     const enrollments = await db.enrollment.findMany({ where: { sectionId: section.id }, select: { id: true } });
-    const cards = await buildCards(db, enrollments.map((e) => e.id), semester, 'approved');
+    const cards = await buildCards(db, enrollments.map((e) => e.id), term, 'approved');
     const { passing } = await loadHonorsPolicy(db);
-    const remedials = await db.remedial.findMany({ where: { semester, enrollment: { sectionId: section.id } } });
+    const remedials = await db.remedial.findMany({ where: { term, enrollment: { sectionId: section.id } } });
     const items: Array<{
       enrollmentId: number;
       learner: ReturnType<typeof briefLearner>;
       subjectId: number;
       subject: string;
-      finalGrade: number;
+      termGrade: number;
       mark: number | null;
       dateFrom: string | null;
       dateTo: string | null;
@@ -286,14 +276,14 @@ export default async function advisoryRoutes(app: FastifyInstance) {
     }> = [];
     for (const c of cards) {
       for (const s of c.subjects) {
-        if (s.finalGrade == null || s.finalGrade >= passing) continue;
+        if (s.grade == null || s.grade >= passing) continue;
         const r = remedials.find((x) => x.enrollmentId === c.enrollmentId && x.subjectId === s.subjectId);
         items.push({
           enrollmentId: c.enrollmentId,
           learner: briefLearner(c.learner),
           subjectId: s.subjectId,
           subject: s.name,
-          finalGrade: s.finalGrade,
+          termGrade: s.grade,
           mark: r?.mark ?? null,
           dateFrom: iso(r?.dateFrom),
           dateTo: iso(r?.dateTo),
@@ -301,7 +291,7 @@ export default async function advisoryRoutes(app: FastifyInstance) {
         });
       }
     }
-    return { semester, passing, items };
+    return { term, passing, items };
   });
 
   app.put('/enrollments/:id/remedial', async (req) => {
@@ -311,12 +301,12 @@ export default async function advisoryRoutes(app: FastifyInstance) {
     await openSection(req, e.sectionId);
     const body = parse(remedialBody, req.body);
     if (body.mark == null) {
-      await db.remedial.deleteMany({ where: { enrollmentId: id, subjectId: body.subjectId, semester: body.semester } });
+      await db.remedial.deleteMany({ where: { enrollmentId: id, subjectId: body.subjectId, term: body.term } });
     } else {
       await db.remedial.upsert({
-        where: { enrollmentId_subjectId_semester: { enrollmentId: id, subjectId: body.subjectId, semester: body.semester } },
+        where: { enrollmentId_subjectId_term: { enrollmentId: id, subjectId: body.subjectId, term: body.term } },
         update: { mark: body.mark, dateFrom: body.dateFrom ?? null, dateTo: body.dateTo ?? null },
-        create: { enrollmentId: id, subjectId: body.subjectId, semester: body.semester, mark: body.mark, dateFrom: body.dateFrom ?? null, dateTo: body.dateTo ?? null },
+        create: { enrollmentId: id, subjectId: body.subjectId, term: body.term, mark: body.mark, dateFrom: body.dateFrom ?? null, dateTo: body.dateTo ?? null },
       });
     }
     await audit(db, req, 'REMEDIAL_SAVED', 'Enrollment', id, body);

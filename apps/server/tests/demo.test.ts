@@ -46,18 +46,18 @@ describe('demo mode', () => {
     expect((await learner.get('/api/me/learner')).json.lrn).toBe((await parent.get('/api/me/learner')).json.lrn);
   });
 
-  it('11-Newton is a finished semester: complete report cards, honors, a remedial class', async () => {
-    const summary = (await registrar.get(`/api/sections/${ids.newton}/summary?semester=1&visibility=approved`)).json;
+  it('11-Newton has finished two terms: complete report cards, honors, a remedial class', async () => {
+    const summary = (await registrar.get(`/api/sections/${ids.newton}/summary?term=1&visibility=approved`)).json;
     expect(summary.learners).toHaveLength(16);
     expect(summary.learners.every((l: { complete: boolean }) => l.complete)).toBe(true);
     expect(summary.learners.some((l: { honors: string | null }) => l.honors)).toBe(true);
-    const remedial = (await registrar.get(`/api/sections/${ids.newton}/remedial?semester=1`)).json;
+    const remedial = (await registrar.get(`/api/sections/${ids.newton}/remedial?term=1`)).json;
     expect(remedial.items.some((r: { mark: number | null }) => r.mark === 80)).toBe(true);
 
-    // the learner portal shows the released semester, with a general average
+    // the learner portal shows the released term, with a general average
     const learner = client(env.app, await login(env.app, '900000000001', DEMO_PASSWORD));
     const me = (await learner.get('/api/me/learner')).json;
-    const card = (await learner.get(`/api/me/enrollments/${me.enrollments[0].id}/card?semester=1`)).json;
+    const card = (await learner.get(`/api/me/enrollments/${me.enrollments[0].id}/card?term=1`)).json;
     expect(card.generalAverage).toBeGreaterThanOrEqual(90);
     expect(card.honors).toBeTruthy(); // the demo learner is a strong student
     expect(card.hasHidden).toBe(false);
@@ -65,12 +65,12 @@ describe('demo mode', () => {
   });
 
   it('other sections show work in progress: an approvals queue and a class still being encoded', async () => {
-    const queue = (await registrar.get('/api/approvals?quarter=2')).json as Array<{ status: string; section: string }>;
+    const queue = (await registrar.get('/api/approvals?term=2')).json as Array<{ status: string; section: string }>;
     expect(queue.filter((r) => r.status === 'SUBMITTED' && r.section.includes('Adam Smith')).length).toBeGreaterThan(5);
 
-    const classes = (await registrar.get(`/api/classes?sectionId=${ids.rizal}&semester=1`)).json as Array<{ id: number }>;
-    const rec = (await registrar.get(`/api/classes/${classes[0]!.id}/record?quarter=2`)).json;
-    expect(rec.canEdit).toBe(true); // quarter 2 is open
+    const classes = (await registrar.get(`/api/classes?sectionId=${ids.rizal}&term=2`)).json as Array<{ id: number }>;
+    const rec = (await registrar.get(`/api/classes/${classes[0]!.id}/record`)).json;
+    expect(rec.canEdit).toBe(true); // term 2 is open
     expect(rec.learners[0].missing).toBeGreaterThan(0); // only the written work is in
     expect(rec.workflow.status).toBe('DRAFT');
 
@@ -119,6 +119,6 @@ describe('demo mode', () => {
     expect((await fresh.get('/api/learners?pageSize=1')).json.total).toBe(before);
     expect((await fresh.get('/api/learners?q=Visitor')).json.total).toBe(0);
     const newton = (await fresh.get('/api/sections')).json.find((s: { name: string }) => s.name === 'Newton');
-    expect((await fresh.get(`/api/sections/${newton.id}/summary?semester=1&visibility=approved`)).json.learners).toHaveLength(16);
+    expect((await fresh.get(`/api/sections/${newton.id}/summary?term=1&visibility=approved`)).json.learners).toHaveLength(16);
   });
 });

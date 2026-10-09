@@ -11,9 +11,9 @@ import {
   headerRow,
   labelValue,
   logoBuffer,
-  ordinalSemester,
   sectionTitle,
   signatureLine,
+  termLabel,
   watermark,
   type Column,
   type Doc,
@@ -76,12 +76,11 @@ function footer(doc: Doc, text: string): void {
   doc.fillColor(COLOR.ink);
 }
 
-/** SF9-SHS: Learner's Progress Report Card, one semester, two pages (front and back). */
+/** SF9-SHS: Learner's Progress Report Card, one term, two pages (front and back). */
 export function drawSf9(doc: Doc, card: Card, school: SchoolInfo, opts: Sf9Options): void {
   if (opts.newPage) doc.addPage();
   if (opts.draft) watermark(doc, 'DRAFT - NOT OFFICIAL');
 
-  const [qa, qb] = card.quarters;
   const genLine = `Generated ${new Date().toISOString().slice(0, 10)}${opts.draft ? '  |  UNOFFICIAL COPY: includes grades that are not yet approved' : ''}`;
 
   // ------------------------------------------------------------------ page 1: learner and grades
@@ -98,16 +97,14 @@ export function drawSf9(doc: Doc, card: Card, school: SchoolInfo, opts: Sf9Optio
   labelValue(doc, PAGE.margin + half, y, 'School Year:', card.schoolYear.name, 60, half - 60, 9);
   y += 14;
   labelValue(doc, PAGE.margin, y, 'Grade / Section:', `Grade ${card.section.gradeLevel} - ${card.section.name}`, 80, half - 86, 9);
-  labelValue(doc, PAGE.margin + half, y, 'Semester:', ordinalSemester(card.semester), 60, half - 60, 9);
+  labelValue(doc, PAGE.margin + half, y, 'Term:', termLabel(card.term), 60, half - 60, 9);
   y += 14;
   labelValue(doc, PAGE.margin, y, 'Track / Strand:', `${card.section.strandCode} - ${card.section.strandName}`, 80, CONTENT_WIDTH - 80, 9);
   y += 20;
 
   const cols: Column[] = [
-    { label: 'SUBJECTS', width: 232 },
-    { label: `Quarter ${qa}`, width: 50, align: 'center' },
-    { label: `Quarter ${qb}`, width: 50, align: 'center' },
-    { label: 'Semester Final Grade', width: 80, align: 'center' },
+    { label: 'SUBJECTS', width: 332 },
+    { label: 'Term Grade', width: 80, align: 'center' },
     { label: 'REMARKS', width: 120, align: 'center' },
   ];
   y += headerRow(doc, PAGE.margin, y, cols);
@@ -120,7 +117,7 @@ export function drawSf9(doc: Doc, card: Card, school: SchoolInfo, opts: Sf9Optio
     if (!g.rows.length) continue;
     y += drawRow(doc, PAGE.margin, y, [{ label: '', width: CONTENT_WIDTH }], [g.label], { size: 8, bold: true, fill: COLOR.band });
     for (const s of g.rows) {
-      const failed = s.finalGrade != null && s.finalGrade < school.passingGrade;
+      const failed = s.grade != null && s.grade < school.passingGrade;
       let remark = s.remark === 'INCOMPLETE' ? '' : title(s.remark);
       if (s.remedial) remark = `${s.remedial.passed ? 'Passed' : 'Failed'} after remedial (${s.remedial.recomputed})`;
       y += drawRow(
@@ -128,8 +125,8 @@ export function drawSf9(doc: Doc, card: Card, school: SchoolInfo, opts: Sf9Optio
         PAGE.margin,
         y,
         cols,
-        [s.name, s.quarters[0]!.grade ?? '', s.quarters[1]!.grade ?? '', s.finalGrade ?? '', remark],
-        { size: 8.5, cellStyle: failed ? { 3: { bold: true, color: COLOR.fail }, 4: { color: COLOR.fail } } : { 3: { bold: true } } },
+        [s.name, s.grade ?? '', remark],
+        { size: 8.5, cellStyle: failed ? { 1: { bold: true, color: COLOR.fail }, 2: { color: COLOR.fail } } : { 1: { bold: true } } },
       );
     }
   }
@@ -144,7 +141,7 @@ export function drawSf9(doc: Doc, card: Card, school: SchoolInfo, opts: Sf9Optio
       { label: '', width: 80, align: 'center' },
       { label: '', width: 120, align: 'center' },
     ],
-    ['GENERAL AVERAGE FOR THE SEMESTER', gaText, card.complete ? (gaFailed ? 'Failed' : 'Passed') : 'Incomplete'],
+    ['GENERAL AVERAGE FOR THE TERM', gaText, card.complete ? (gaFailed ? 'Failed' : 'Passed') : 'Incomplete'],
     { size: 9, bold: true, fill: COLOR.head, padY: 4, cellStyle: gaFailed ? { 1: { color: COLOR.fail } } : {} },
   );
   if (card.honors) {
@@ -173,7 +170,7 @@ export function drawSf9(doc: Doc, card: Card, school: SchoolInfo, opts: Sf9Optio
   doc.addPage();
   if (opts.draft) watermark(doc, 'DRAFT - NOT OFFICIAL');
   y = PAGE.margin;
-  centered(doc, `${formatLearnerName(L)}   |   LRN ${L.lrn}   |   Grade ${card.section.gradeLevel} - ${card.section.name}   |   ${card.schoolYear.name}, ${ordinalSemester(card.semester)}`, y, 8.5, true, COLOR.muted);
+  centered(doc, `${formatLearnerName(L)}   |   LRN ${L.lrn}   |   Grade ${card.section.gradeLevel} - ${card.section.name}   |   ${card.schoolYear.name}, ${termLabel(card.term)}`, y, 8.5, true, COLOR.muted);
   y += 20;
 
   y += sectionTitle(doc, 'Report on attendance', y);
@@ -200,19 +197,18 @@ export function drawSf9(doc: Doc, card: Card, school: SchoolInfo, opts: Sf9Optio
   y += sectionTitle(doc, 'Report on learner\'s observed values', y);
   const vcols: Column[] = [
     { label: 'Core Values', width: 80 },
-    { label: 'Behavior Statements', width: 292 },
-    { label: `Quarter ${qa}`, width: 80, align: 'center' },
-    { label: `Quarter ${qb}`, width: 80, align: 'center' },
+    { label: 'Behavior Statements', width: 372 },
+    { label: termLabel(card.term), width: 80, align: 'center' },
   ];
   y += headerRow(doc, PAGE.margin, y, vcols, 8);
   let lastCore = '';
   for (const v of OBSERVED_VALUES) {
     const first = v.coreValue !== lastCore;
     lastCore = v.coreValue;
-    y += drawRow(doc, PAGE.margin, y, vcols, [first ? v.coreValue : '', v.statement, card.values[v.key]?.[qa] ?? '', card.values[v.key]?.[qb] ?? ''], {
+    y += drawRow(doc, PAGE.margin, y, vcols, [first ? v.coreValue : '', v.statement, card.values[v.key] ?? ''], {
       size: 8,
       padY: 3,
-      cellStyle: { 0: { bold: true }, 2: { bold: true }, 3: { bold: true } },
+      cellStyle: { 0: { bold: true }, 2: { bold: true } },
     });
   }
   y += 6;
@@ -228,10 +224,7 @@ export function drawSf9(doc: Doc, card: Card, school: SchoolInfo, opts: Sf9Optio
   y += 50;
   doc.font('Helvetica-Bold').fontSize(9).fillColor(COLOR.ink).text("Parent's / Guardian's Signature", PAGE.margin, y, { width: CONTENT_WIDTH });
   y += 26;
-  for (const q of [qa, qb]) {
-    doc.font('Helvetica').fontSize(8.5).fillColor(COLOR.muted).text(`Quarter ${q}:`, PAGE.margin, y, { width: 60, lineBreak: false });
-    doc.lineWidth(0.5).strokeColor(COLOR.ink).moveTo(PAGE.margin + 62, y + 9).lineTo(PAGE.margin + 62 + 240, y + 9).stroke();
-    y += 24;
-  }
+  doc.font('Helvetica').fontSize(8.5).fillColor(COLOR.muted).text(`${termLabel(card.term)}:`, PAGE.margin, y, { width: 60, lineBreak: false });
+  doc.lineWidth(0.5).strokeColor(COLOR.ink).moveTo(PAGE.margin + 62, y + 9).lineTo(PAGE.margin + 62 + 240, y + 9).stroke();
   footer(doc, genLine);
 }

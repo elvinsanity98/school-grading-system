@@ -1,4 +1,4 @@
-import { DEFAULT_SCHOOL, DEFAULT_WEIGHT_PROFILES } from '@bnhs/core';
+import { DEFAULT_SCHOOL, DEFAULT_WEIGHT_PROFILES, TERMS } from '@bnhs/core';
 import type { Db } from './db';
 
 interface StrandSeed {
@@ -23,7 +23,7 @@ interface SubjectSeed {
   name: string;
   type: SubjectType;
   isImmersion?: boolean;
-  /** Where it is offered: [gradeLevel, semester] pairs. */
+  /** Where the K to 12 guide offers it: [gradeLevel, semester] pairs (see spreadOverTerms). */
   when: Array<[11 | 12, 1 | 2]>;
   /** Strand codes. Omit for every strand. */
   strands?: string[];
@@ -183,6 +183,31 @@ export const SUBJECT_SEEDS: SubjectSeed[] = [
   { code: 'HE4', name: 'Cookery 4', type: 'SPECIALIZED', when: [[12, 2]], strands: ['TVL-HE'] },
 ];
 
+/**
+ * The K to 12 guide lists subjects per semester, but the school runs three terms a year. Spread each
+ * grade level's subjects evenly over the three terms, earlier semester first. Returns a map of
+ * `${strand code or *}|${gradeLevel}|${subject code}` to the term number.
+ */
+function spreadOverTerms(): Map<string, number> {
+  const groups = new Map<string, Array<{ code: string; semester: number; index: number }>>();
+  SUBJECT_SEEDS.forEach((seed, index) => {
+    for (const [gradeLevel, semester] of seed.when) {
+      for (const target of seed.strands ?? ['*']) {
+        const key = `${target}|${gradeLevel}`;
+        const list = groups.get(key) ?? [];
+        list.push({ code: seed.code, semester, index });
+        groups.set(key, list);
+      }
+    }
+  });
+  const termOf = new Map<string, number>();
+  for (const [key, list] of groups) {
+    list.sort((a, b) => a.semester - b.semester || a.index - b.index);
+    list.forEach((item, i) => termOf.set(`${key}|${item.code}`, Math.floor((i * 3) / list.length) + 1));
+  }
+  return termOf;
+}
+
 export interface BaseSeedOptions {
   schoolName?: string;
   /** Load the sample strands, subjects and curriculum. */
@@ -216,27 +241,31 @@ export async function seedBaseData(db: Db, opts: BaseSeedOptions = {}): Promise<
   if (newSubjects.length) await db.subject.createMany({ data: newSubjects });
   const subjectByCode = new Map((await db.subject.findMany()).map((x) => [x.code, x.id]));
 
-  const slot = (strandId: number | null, gradeLevel: number, semester: number, subjectId: number) => `${strandId ?? 'all'}|${gradeLevel}|${semester}|${subjectId}`;
-  const haveSlots = new Set((await db.curriculumSubject.findMany()).map((c) => slot(c.strandId, c.gradeLevel, c.semester, c.subjectId)));
-  const rows: Array<{ strandId: number | null; gradeLevel: number; semester: number; subjectId: number; sortOrder: number }> = [];
+  const slot = (strandId: number | null, gradeLevel: number, term: number, subjectId: number) => `${strandId ?? 'all'}|${gradeLevel}|${term}|${subjectId}`;
+  const haveSlots = new Set((await db.curriculumSubject.findMany()).map((c) => slot(c.strandId, c.gradeLevel, c.term, c.subjectId)));
+  const rows: Array<{ strandId: number | null; gradeLevel: number; term: number; subjectId: number; sortOrder: number }> = [];
+  const termOf = spreadOverTerms();
   SUBJECT_SEEDS.forEach((seed, index) => {
     const subjectId = subjectByCode.get(seed.code)!;
     // Subjects every strand takes (core and applied) are stored once with strandId = null.
-    const targets: Array<number | null> = seed.strands ? seed.strands.map((c) => strandByCode.get(c)!) : [null];
-    for (const [gradeLevel, semester] of seed.when) {
-      for (const strandId of targets) {
-        if (haveSlots.has(slot(strandId, gradeLevel, semester, subjectId))) continue;
-        haveSlots.add(slot(strandId, gradeLevel, semester, subjectId));
-        rows.push({ strandId, gradeLevel, semester, subjectId, sortOrder: index + 1 });
+    const targets: Array<{ code: string; strandId: number | null }> = seed.strands
+      ? seed.strands.map((code) => ({ code, strandId: strandByCode.get(code)! }))
+      : [{ code: '*', strandId: null }];
+    for (const [gradeLevel] of seed.when) {
+      for (const { code, strandId } of targets) {
+        const term = termOf.get(`${code}|${gradeLevel}|${seed.code}`)!;
+        if (haveSlots.has(slot(strandId, gradeLevel, term, subjectId))) continue;
+        haveSlots.add(slot(strandId, gradeLevel, term, subjectId));
+        rows.push({ strandId, gradeLevel, term, subjectId, sortOrder: index + 1 });
       }
     }
   });
   if (rows.length) await db.curriculumSubject.createMany({ data: rows });
 }
 
-/** Creates the four grading periods of a school year (all closed) unless they already exist. */
+/** Creates the three grading periods (terms) of a school year, all closed, unless they already exist. */
 export async function createPeriods(db: Db, schoolYearId: number): Promise<void> {
-  const have = new Set((await db.gradingPeriod.findMany({ where: { schoolYearId }, select: { quarter: true } })).map((p) => p.quarter));
-  const missing = [1, 2, 3, 4].filter((q) => !have.has(q)).map((quarter) => ({ schoolYearId, quarter, status: 'CLOSED', released: false }));
+  const have = new Set((await db.gradingPeriod.findMany({ where: { schoolYearId }, select: { term: true } })).map((p) => p.term));
+  const missing = TERMS.filter((t) => !have.has(t)).map((term) => ({ schoolYearId, term, status: 'CLOSED', released: false }));
   if (missing.length) await db.gradingPeriod.createMany({ data: missing });
 }

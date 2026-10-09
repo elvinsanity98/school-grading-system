@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { Link } from 'react-router';
-import { SEMESTER_LABEL, semesterOfQuarter } from '@bnhs/core';
+import { TERMS, TERM_LABEL } from '@bnhs/core';
 import { cx, Segmented, Select } from './ui';
 import { get } from '../lib/api';
 import { useSession } from '../lib/auth';
-import type { ClassStatus, SectionRow } from '../lib/types';
+import type { SectionRow } from '../lib/types';
 
 const PILL: Record<string, string> = {
   DRAFT: 'bg-surface-2 text-muted',
@@ -15,45 +15,25 @@ const PILL: Record<string, string> = {
 };
 const PILL_TITLE: Record<string, string> = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: 'Approved', RETURNED: 'Returned for corrections' };
 
-/** Four little Q1-Q4 chips showing where each quarter of a class stands. */
-export function QuarterPills({ classId, statuses, semester }: { classId: number; statuses: ClassStatus[]; semester?: number }) {
+/** A little chip showing where one class record stands. */
+export function StatusPill({ classId, status, term }: { classId: number; status: string; term: number }) {
   return (
-    <div className="flex gap-1">
-      {statuses
-        .filter((s) => (semester ? semesterOfQuarter(s.quarter) === semester : true))
-        .map((s) => (
-          <Link
-            key={s.quarter}
-            to={`/classes/${classId}?quarter=${s.quarter}`}
-            title={`Quarter ${s.quarter}: ${PILL_TITLE[s.status] ?? s.status}`}
-            className={cx('rounded-md px-2 py-1 text-xs font-semibold tnum', PILL[s.status] ?? PILL.DRAFT)}
-          >
-            Q{s.quarter}
-          </Link>
-        ))}
-    </div>
+    <Link
+      to={`/classes/${classId}`}
+      title={`Term ${term}: ${PILL_TITLE[status] ?? status}`}
+      className={cx('rounded-md px-2 py-1 text-xs font-semibold', PILL[status] ?? PILL.DRAFT)}
+    >
+      {PILL_TITLE[status] ?? status}
+    </Link>
   );
 }
 
-export function QuarterPicker({ value, onChange, quarters = [1, 2, 3, 4], openQuarters }: { value: number; onChange: (q: number) => void; quarters?: number[]; openQuarters?: number[] }) {
+export function TermPicker({ value, onChange, openTerms }: { value: number; onChange: (t: number) => void; openTerms?: number[] }) {
   return (
     <Segmented
       value={value}
       onChange={onChange}
-      options={quarters.map((q) => ({ id: q, label: `Q${q}${openQuarters?.includes(q) ? ' •' : ''}`, title: openQuarters?.includes(q) ? 'Open for encoding' : undefined }))}
-    />
-  );
-}
-
-export function SemesterPicker({ value, onChange }: { value: number; onChange: (s: number) => void }) {
-  return (
-    <Segmented
-      value={value}
-      onChange={onChange}
-      options={[
-        { id: 1, label: SEMESTER_LABEL[1] },
-        { id: 2, label: SEMESTER_LABEL[2] },
-      ]}
+      options={TERMS.map((t) => ({ id: t, label: `${TERM_LABEL[t]}${openTerms?.includes(t) ? ' •' : ''}`, title: openTerms?.includes(t) ? 'Open for encoding' : undefined }))}
     />
   );
 }

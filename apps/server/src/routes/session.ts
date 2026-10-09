@@ -26,7 +26,7 @@ export default async function sessionRoutes(app: FastifyInstance) {
     const [row, school, years] = await Promise.all([
       db.user.findUniqueOrThrow({ where: { id: user.id } }),
       loadSchool(app),
-      db.schoolYear.findMany({ orderBy: { startDate: 'desc' }, include: { periods: { orderBy: { quarter: 'asc' } } } }),
+      db.schoolYear.findMany({ orderBy: { startDate: 'desc' }, include: { periods: { orderBy: { term: 'asc' } } } }),
     ]);
     const current = years.find((y) => y.isCurrent) ?? years[0] ?? null;
     const [advisory, loads, learner] = await Promise.all([
@@ -51,7 +51,7 @@ export default async function sessionRoutes(app: FastifyInstance) {
         startDate: iso(y.startDate),
         endDate: iso(y.endDate),
         isCurrent: y.isCurrent,
-        periods: y.periods.map((p) => ({ id: p.id, quarter: p.quarter, status: p.status, released: p.released })),
+        periods: y.periods.map((p) => ({ id: p.id, term: p.term, status: p.status, released: p.released })),
       })),
       currentYearId: current?.id ?? null,
       advisory: advisory.map((s) => ({

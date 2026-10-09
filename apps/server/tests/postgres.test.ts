@@ -3,10 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { derivePostgresSchema, postgresSchemaPath, sqliteSchemaPath } from '../scripts/make-pg-schema';
 import { dbKind } from '../src/db';
-import { client, makeTestEnv, usingPostgres, type TestEnv } from './helpers';
+import { client, makeTestEnv, migrationFiles, postgresMigrations, sqliteMigrations, usingPostgres, type TestEnv } from './helpers';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
-const tables = (sql: string) => [...sql.matchAll(/CREATE TABLE "(\w+)"/g)].map((m) => m[1]!).sort();
 
 describe('PostgreSQL support files', () => {
   it('the PostgreSQL schema is generated from the SQLite one and is up to date', () => {
@@ -24,12 +23,26 @@ describe('PostgreSQL support files', () => {
     }
   });
 
-  it('both databases have the same tables', () => {
-    const sqlite = tables(read('../prisma/migrations/20260930044342_init/migration.sql'));
-    const postgres = tables(read('../prisma/postgres/migrations/20260930000000_init/migration.sql'));
+  it('both databases end up with the same tables once every migration has run', async () => {
+    const { createClient } = await import('@libsql/client');
+    const { PGlite } = await import('@electric-sql/pglite');
+
+    const lite = createClient({ url: ':memory:' });
+    for (const sql of migrationFiles(sqliteMigrations)) await lite.executeMultiple(sql);
+    const sqlite = (await lite.execute(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)).rows.map((r) => String(r.name));
+    lite.close();
+
+    const pg = await PGlite.create();
+    await pg.exec('CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;');
+    for (const sql of migrationFiles(postgresMigrations)) await pg.exec(sql);
+    const postgres = (await pg.query<{ name: string }>(`SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`)).rows.map((r) => r.name);
+    await pg.close();
+
     expect(postgres).toEqual(sqlite);
     expect(postgres.length).toBeGreaterThan(20);
-  });
+    expect(postgres).toContain('TermGrade');
+    expect(postgres).not.toContain('QuarterlyGrade');
+  }, 60_000);
 });
 
 /** Only when the suite runs with TEST_DB=postgres (npm run test:postgres). */
