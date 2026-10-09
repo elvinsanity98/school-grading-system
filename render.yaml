@@ -1,0 +1,27 @@
+# Render Blueprint for a PUBLIC DEMO with made-up data. Nothing to configure and no database to create.
+#
+#   Render dashboard -> New -> Blueprint -> pick this repository -> Apply
+#
+# The demo loads its own fake learners at start, offers one-click sign-in for every role and wipes itself
+# every few hours. It refuses to run if DATABASE_URL points at PostgreSQL, so it can never touch real records.
+# For the real school system create a normal Web Service instead (docs/DEPLOYMENT.md).
+services:
+  - type: web
+    name: bnhs-grades-demo
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "true"
+      - key: DEMO_RESET_HOURS
+        value: "6"
+      - key: JWT_SECRET
+        generateValue: true

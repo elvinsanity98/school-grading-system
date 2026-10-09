@@ -10,7 +10,7 @@ DepEd Order No. 8, s. 2015 for computing grades and runs as a **website** and as
 - Learners and parents see their own approved grades.
 
 > **Status.** All server logic, the web app and the Android project are written and the parts that can run on a
-> computer are tested (65 automated tests, plus 5 more when run on PostgreSQL, a real browser walk-through, generated PDFs inspected). The Android
+> computer are tested (72 automated tests, plus 5 more when run on PostgreSQL, a real browser walk-through, generated PDFs inspected). The Android
 > app has **not** been built into an APK or run on a phone yet, because this machine has no Android SDK.
 > See [docs/ANDROID.md](docs/ANDROID.md). Read [Known limits](#known-limits) before using it for real records.
 
@@ -23,9 +23,12 @@ npm install
 npm run demo
 ```
 
-Open <http://localhost:3000> and sign in with password `Demo#2026` as `admin`, `registrar`, `teacher1` (an adviser) or
-`900000000001` (a learner). The demo has 68 made-up learners in 5 sections with Quarter 1 already encoded.
+Open <http://localhost:3000> and press one of the role buttons (administrator, registrar, class adviser, subject teacher, learner,
+parent). They all use the password `Demo#2026`. The demo has 68 made-up learners in 5 sections: a finished semester, an approvals queue and a class still being encoded.
 It lives in its own file (`apps/server/data/demo.db`) and never touches real data.
+
+**Want a public link to show others?** Deploy the same thing online with one click: in Render choose New, Blueprint and pick
+this repository (`render.yaml`). See *Public demo* in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Using it at school
 
@@ -86,7 +89,7 @@ editable by the administrator. Worked example and all rules: [docs/DEPED-RULES.m
 
 ```
 packages/core     DepEd grading rules (pure TypeScript, 28 tests)
-apps/server       API, database schema and migrations (SQLite + PostgreSQL), PDF and Excel reports (25 tests, 30 on PostgreSQL)
+apps/server       API, database schema and migrations (SQLite + PostgreSQL), PDF and Excel reports (32 tests, 37 on PostgreSQL)
 apps/web          React app + Capacitor Android project in apps/web/android (12 tests)
 docs/             user guide, deployment, Android, DepEd rules
 ```

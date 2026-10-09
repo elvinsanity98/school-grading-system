@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { Eye, EyeOff, GraduationCap, Server } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
+import { DemoLoginPanel } from '../components/demo';
 import { Alert, Button, Field, Input, errorMessage } from '../components/ui';
 import { get, getServerUrl, needsServerSetup, normalizeServerUrl, pingServer, setServerUrl } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { isNative } from '../lib/platform';
+import type { DemoInfo } from '../lib/types';
 
 export function ServerConnect({ onDone, onCancel }: { onDone: () => void; onCancel?: () => void }) {
   const [url, setUrl] = useState(getServerUrl());
@@ -48,7 +50,7 @@ export function ServerConnect({ onDone, onCancel }: { onDone: () => void; onCanc
   );
 }
 
-export function Login({ schoolName }: { schoolName: string }) {
+export function Login({ schoolName, demo }: { schoolName: string; demo?: DemoInfo | null }) {
   const { signIn } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -97,9 +99,11 @@ export function Login({ schoolName }: { schoolName: string }) {
           {changeServer ? (
             <ServerConnect onDone={() => window.location.reload()} onCancel={() => setChangeServer(false)} />
           ) : (
+            <>
+            {demo ? <DemoLoginPanel demo={demo} /> : null}
             <form onSubmit={submit} className="flex flex-col gap-4">
               <div>
-                <h2 className="text-2xl font-semibold">Sign in</h2>
+                <h2 className="text-2xl font-semibold">{demo ? 'Or sign in by hand' : 'Sign in'}</h2>
                 <p className="text-sm text-muted">Teachers and staff use the username from the administrator. Learners use their LRN.</p>
               </div>
               <Field label="Username or LRN">
@@ -124,8 +128,11 @@ export function Login({ schoolName }: { schoolName: string }) {
                   <Server className="size-4" /> Server: {getServerUrl()}
                 </button>
               ) : null}
-              <p className="text-center text-xs text-muted">Forgot your password? Ask the school administrator to reset it.</p>
+              <p className="text-center text-xs text-muted">
+                {demo ? `Every demo account uses the password ${demo.password}` : 'Forgot your password? Ask the school administrator to reset it.'}
+              </p>
             </form>
+            </>
           )}
         </div>
       </div>
@@ -137,7 +144,7 @@ export function Login({ schoolName }: { schoolName: string }) {
 export function useSetupStatus() {
   return useQuery({
     queryKey: ['setup-status'],
-    queryFn: () => get<{ needsSetup: boolean; schoolName: string }>('/setup/status'),
+    queryFn: () => get<{ needsSetup: boolean; schoolName: string; demo: DemoInfo | null }>('/setup/status'),
     enabled: !needsServerSetup(),
     retry: false,
     staleTime: 30_000,

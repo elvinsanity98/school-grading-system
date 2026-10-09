@@ -44,7 +44,16 @@ function loadJwtSecret(): string {
   return secret;
 }
 
+const truthy = (v: string | undefined) => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase());
+
 export const config = {
+  /**
+   * Hosted demo: fake data, one-click sign-in for every role, automatic reset. Never use with real records.
+   */
+  demo: {
+    enabled: truthy(process.env.DEMO_MODE),
+    resetEveryHours: Number(process.env.DEMO_RESET_HOURS ?? 6) || 6,
+  },
   port: Number(process.env.PORT ?? 3000),
   host: process.env.HOST ?? '0.0.0.0',
   jwtSecret: loadJwtSecret(),

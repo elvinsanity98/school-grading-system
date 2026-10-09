@@ -371,3 +371,19 @@ export interface AuditRow {
 }
 
 export interface AdminUserRow extends User {}
+
+export interface DemoAccount {
+  label: string;
+  username: string;
+  hint: string;
+}
+
+/** Present only on the public demo server. */
+export interface DemoInfo {
+  enabled: true;
+  password: string;
+  accounts: DemoAccount[];
+  resetEveryHours: number;
+  lastResetAt: string;
+  nextResetAt: string;
+}

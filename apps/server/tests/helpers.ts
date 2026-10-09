@@ -7,6 +7,8 @@ import { createClient } from '@libsql/client';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { createDb, tuneSqlite, type Db } from '../src/db';
+import type { DemoOptions } from '../src/demo/mode';
+import { seedDemo } from '../src/demo/seed';
 
 /**
  * `npm test` runs everything on SQLite. `TEST_DB=postgres npm test` runs the same tests on PostgreSQL:
@@ -44,7 +46,7 @@ async function freePort(): Promise<number> {
   });
 }
 
-async function makeSqlite(): Promise<TestEnv> {
+async function makeSqlite(demo?: DemoOptions): Promise<TestEnv> {
   const dir = mkdtempSync(join(tmpdir(), 'bnhs-test-'));
   const url = `file:${join(dir, 'test.db').replace(/\\/g, '/')}`;
   const raw = createClient({ url });
@@ -53,7 +55,8 @@ async function makeSqlite(): Promise<TestEnv> {
 
   const db = createDb(url);
   await tuneSqlite(db);
-  const app = await buildApp({ db, logger: false, rateLimit: false });
+  if (demo) await seedDemo(db);
+  const app = await buildApp({ db, logger: false, rateLimit: false, demo });
   await app.ready();
   return {
     app,
@@ -71,7 +74,7 @@ async function makeSqlite(): Promise<TestEnv> {
   };
 }
 
-async function makePostgres(): Promise<TestEnv> {
+async function makePostgres(demo?: DemoOptions): Promise<TestEnv> {
   const { PGlite } = await import('@electric-sql/pglite');
   const { PGLiteSocketServer } = await import('@electric-sql/pglite-socket');
   const pg = await PGlite.create();
@@ -86,7 +89,8 @@ async function makePostgres(): Promise<TestEnv> {
   // PGlite is a single session, so keep to one connection.
   process.env.DATABASE_POOL_MAX = '1';
   const db = createDb(`postgresql://postgres:postgres@127.0.0.1:${port}/postgres`);
-  const app = await buildApp({ db, logger: false, rateLimit: false });
+  if (demo) await seedDemo(db);
+  const app = await buildApp({ db, logger: false, rateLimit: false, demo });
   await app.ready();
   return {
     app,
@@ -102,8 +106,8 @@ async function makePostgres(): Promise<TestEnv> {
 }
 
 /** A fresh app on a throw-away database with the real migrations applied. */
-export async function makeTestEnv(): Promise<TestEnv> {
-  return usingPostgres ? makePostgres() : makeSqlite();
+export async function makeTestEnv(opts: { demo?: DemoOptions } = {}): Promise<TestEnv> {
+  return usingPostgres ? makePostgres(opts.demo) : makeSqlite(opts.demo);
 }
 
 export interface Res<T = any> {

@@ -7,7 +7,7 @@ import { getServerUrl, post } from '../lib/api';
 import { useAuth, useSession } from '../lib/auth';
 import { dateTimeLabel } from '../lib/format';
 import { isNative } from '../lib/platform';
-import { ServerConnect } from './Login';
+import { ServerConnect, useSetupStatus } from './Login';
 
 export function PasswordForm({ forced, onDone }: { forced?: boolean; onDone?: () => void }) {
   const { adoptToken } = useAuth();
@@ -79,6 +79,7 @@ export function AccountPage() {
   const { user, school } = useSession();
   const { signOut } = useAuth();
   const navigate = useNavigate();
+  const demo = useSetupStatus().data?.demo ?? null;
   const [server, setServer] = useState(false);
   return (
     <div className="mx-auto max-w-xl">
@@ -101,7 +102,7 @@ export function AccountPage() {
         </Card>
         <Card>
           <CardTitle>Change password</CardTitle>
-          <PasswordForm />
+          {demo ? <Alert tone="info">Passwords cannot be changed in the demo, so that the next visitor can still sign in.</Alert> : <PasswordForm />}
         </Card>
         {isNative() ? (
           <Card>

@@ -54,7 +54,7 @@ export default async function publicRoutes(app: FastifyInstance, opts: { rateLim
   app.get('/setup/status', async () => {
     const users = await db.user.count();
     const school = await db.school.findUnique({ where: { id: 1 } });
-    return { needsSetup: users === 0, schoolName: school?.name ?? 'Balakan National High School' };
+    return { needsSetup: users === 0, schoolName: school?.name ?? 'Balakan National High School', demo: app.demo?.info() ?? null };
   });
 
   /** First run only: creates the school, the base data and the first administrator. */

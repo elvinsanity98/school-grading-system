@@ -130,7 +130,7 @@ export default function App() {
       );
     }
     if (status.data.needsSetup) return <FirstRun schoolName={status.data.schoolName} />;
-    return <Login schoolName={status.data.schoolName} />;
+    return <Login schoolName={status.data.schoolName} demo={status.data.demo} />;
   }
 
   if (auth.user?.mustChangePassword) return <ForcePasswordChange />;

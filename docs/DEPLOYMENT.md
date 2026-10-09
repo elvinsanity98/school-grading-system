@@ -91,6 +91,26 @@ Copy `apps/server/.env.example` to `apps/server/.env`. Everything is optional:
 Setup, School years, *New school year*, then make it current. Create the new sections, enroll returning learners
 (Learners, tick *Not yet enrolled this year*, or import the list), assign teachers. Last year's data stays and stays printable.
 
+## Public demo (made-up data, nothing to set up)
+
+To let people try the system without any real records, run it in **demo mode**. The login page then offers one-click
+sign-in as an administrator, registrar, teacher, adviser, learner or parent, a banner lets visitors switch role or reset
+the data, and everything wipes itself and reloads every few hours. The fake school has 68 learners in 5 sections: a
+finished semester with report cards, honors and a remedial class, an approvals queue, and a class still being encoded.
+
+**On Render, in a few clicks:** Render dashboard, **New**, **Blueprint**, pick this repository, **Apply**. It reads
+`render.yaml` and creates `bnhs-grades-demo` on the free plan with no database and no secrets to enter. The web address
+is shown on the service page. On the free plan the service sleeps when idle and the first visit takes a minute or two
+(the data is reloaded when it wakes).
+
+**On any computer or host:** set `DEMO_MODE=true` (and optionally `DEMO_RESET_HOURS`, default 6) and run `npm start`.
+On your own PC, `npm run demo` does the same with a separate file (`apps/server/data/demo.db`).
+
+What demo mode changes: demo data is loaded into an empty database; the accounts all share the public password
+`Demo#2026`; changing passwords, creating or editing users and downloading backups are switched off (so one visitor cannot lock
+the next one out); visitors may reset the demo at most every 5 minutes. **It refuses to start when `DATABASE_URL` is
+PostgreSQL**, so it cannot wipe a real Supabase database. Never enter real learner data into a demo.
+
 ## Supabase (PostgreSQL) instead of the local file
 
 By default everything is stored in one SQLite file on the server. The system can store it in **PostgreSQL** instead,

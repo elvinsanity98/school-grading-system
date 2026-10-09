@@ -9,6 +9,7 @@ import { ZodError } from 'zod';
 import { authenticate } from './auth';
 import { config, isProd } from './config';
 import type { Db } from './db';
+import { createDemo, installDemo, type DemoOptions } from './demo/mode';
 import { AppError, forbidden, isForeignKeyViolation, isUniqueViolation } from './errors';
 import advisoryRoutes from './routes/advisory';
 import adminRoutes from './routes/admin';
@@ -29,6 +30,8 @@ export interface BuildOptions {
   logger?: boolean;
   /** Turn off for tests that hammer the login route. */
   rateLimit?: boolean;
+  /** Run as the public demo: one-click sign-in, risky actions off, scheduled reset. */
+  demo?: DemoOptions;
 }
 
 /** Endpoints a user may call while a password change is still required. */
@@ -45,7 +48,12 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   });
 
   app.decorate('db', opts.db);
+  app.decorate('demo', null);
   app.decorateRequest('user', null);
+  if (opts.demo) {
+    app.demo = createDemo(opts.db, opts.demo);
+    await installDemo(app, app.demo);
+  }
 
   await app.register(helmet, {
     contentSecurityPolicy: {
